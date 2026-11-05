@@ -1,0 +1,15 @@
+# Keep LF line endings on every platform: shell scripts and the Makefile run inside Linux
+# containers and break with CRLF, and core.autocrlf=true on Windows would otherwise convert them.
+* text=auto eol=lf
+
+# Windows-only scripts keep CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary files are never touched.
+*.png binary
+*.jpg binary
+*.ico binary
+*.pdf binary
+*.woff2 binary
