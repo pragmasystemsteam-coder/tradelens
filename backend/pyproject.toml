@@ -1,0 +1,112 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tradelens-backend"
+version = "0.1.0"
+description = "TradeLens API, worker, adapters and migrations"
+requires-python = ">=3.12"
+dependencies = [
+  "tradelens-engine",
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "pydantic>=2.7",
+  "sqlalchemy>=2.0.30",
+  "alembic>=1.13",
+  "psycopg[binary]>=3.2",
+  "redis>=5",
+  "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11", "import-linter>=2.1"]
+
+[tool.setuptools.package-data]
+tradelens = ["py.typed"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["tradelens*"]
+
+# --- Architecture contracts (ADR-0001 section 4). Run: lint-imports --config backend/pyproject.toml
+[tool.importlinter]
+root_packages = ["tradelens"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+id = "core-is-leaf"
+name = "core imports nothing else from tradelens"
+type = "forbidden"
+source_modules = ["tradelens.core"]
+forbidden_modules = ["tradelens.modules", "tradelens.app", "tradelens.worker", "tradelens.cli"]
+
+[[tool.importlinter.contracts]]
+id = "modules-dag"
+name = "a module imports only modules in lower layers"
+type = "layers"
+containers = ["tradelens.modules"]
+layers = [
+  "(admin) | (monitoring)",
+  "(alerts) | (charts) | (watchlists)",
+  "(scanner)",
+  "(analysis) | (customization)",
+  "(billing)",
+  "(accounts) | (market_data) | (realtime) | (notifications)",
+]
+
+[[tool.importlinter.contracts]]
+id = "module-hexagon"
+name = "inside a module: router > public > service > repository > models"
+type = "layers"
+containers = ["tradelens.modules.*"]
+layers = ["(router)", "(public)", "(service)", "(repository)", "(models)"]
+
+[[tool.importlinter.contracts]]
+id = "public-is-leaf"
+name = "public.py is a plain facade: no web framework, roots or integrations"
+type = "forbidden"
+source_modules = ["tradelens.modules.*.public"]
+forbidden_modules = ["fastapi", "starlette", "tradelens.app", "tradelens.worker", "tradelens.cli"]
+
+[[tool.importlinter.contracts]]
+id = "no-web-in-service"
+name = "services, repositories, models and core never import the web framework"
+type = "forbidden"
+source_modules = [
+  "tradelens.core",
+  "tradelens.modules.*.service",
+  "tradelens.modules.*.repository",
+  "tradelens.modules.*.models",
+]
+forbidden_modules = ["fastapi", "starlette"]
+
+[[tool.importlinter.contracts]]
+id = "roots-are-roots"
+name = "nothing imports the app, worker or cli roots"
+type = "forbidden"
+source_modules = ["tradelens.core", "tradelens.modules"]
+forbidden_modules = ["tradelens.app", "tradelens.worker", "tradelens.cli"]
+
+[[tool.importlinter.contracts]]
+id = "roots-independent"
+name = "app, worker and cli do not import each other"
+type = "independence"
+modules = ["tradelens.app", "tradelens.worker", "tradelens.cli"]
+
+[[tool.importlinter.contracts]]
+id = "no-integration-leak"
+name = "modules and core never import integrations (integrations implement module ports)"
+type = "forbidden"
+source_modules = ["tradelens.core", "tradelens.modules"]
+forbidden_modules = ["tradelens.integrations"]
+
+[tool.mypy]
+python_version = "3.12"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_return_any = true

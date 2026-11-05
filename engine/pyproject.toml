@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tradelens-engine"
+version = "0.1.0"
+description = "Deterministic, integer-only Smart Money Concepts engine (no I/O, clock or randomness)"
+requires-python = ">=3.12"
+dependencies = ["tzdata>=2024.1"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11", "import-linter>=2.1"]
+
+[tool.setuptools.package-data]
+tradelens_engine = ["py.typed"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["tradelens_engine*"]
+
+# --- Engine purity (AD-02, DD-5). Run: lint-imports --config engine/pyproject.toml
+[tool.importlinter]
+root_packages = ["tradelens_engine"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+id = "engine-purity"
+name = "the engine imports no backend, database, network or randomness"
+type = "forbidden"
+source_modules = ["tradelens_engine"]
+forbidden_modules = ["tradelens", "sqlalchemy", "fastapi", "redis", "httpx", "psycopg", "random", "socket", "os", "time", "subprocess"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true

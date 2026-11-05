@@ -1,0 +1,259 @@
+# TradeLens services (Detailed Design 6.6). Only the proxy publishes ports.
+# Run from the repository root: docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d
+# The backup service (pg_dump to R2) is added with backup.sh / restore.sh (task 3.11).
+name: tradelens
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "7"
+
+x-backend-env: &backend-env
+  APP_ENV: ${APP_ENV}
+  TZ: UTC
+  LOG_LEVEL: ${LOG_LEVEL}
+  DATABASE_URL: ${DATABASE_URL}
+  REDIS_URL: ${REDIS_URL}
+  CONFIG_DIR: /app/config
+  HEARTBEAT_INTERVAL_SECONDS: ${HEARTBEAT_INTERVAL_SECONDS}
+  HEARTBEAT_TTL_SECONDS: ${HEARTBEAT_TTL_SECONDS}
+  PRICE_STALE_AFTER_SECONDS: ${PRICE_STALE_AFTER_SECONDS}
+  SMTP_HOST: ${SMTP_HOST}
+  SMTP_PORT: ${SMTP_PORT}
+  SMTP_STARTTLS: ${SMTP_STARTTLS}
+  SMTP_USER: ${SMTP_USER}
+  SMTP_PASSWORD: ${SMTP_PASSWORD}
+  EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS}
+  EMAIL_FROM_NAME: ${EMAIL_FROM_NAME}
+  EMAIL_REPLY_TO: ${EMAIL_REPLY_TO}
+  EMAIL_OUTBOX_MAX_ATTEMPTS: ${EMAIL_OUTBOX_MAX_ATTEMPTS}
+  SENTRY_DSN_BACKEND: ${SENTRY_DSN_BACKEND}
+  SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT}
+
+services:
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_HOST: ${SITE_HOST}
+      APP_HOST: ${APP_HOST}
+      ADMIN_HOST: ${ADMIN_HOST}
+      TLS_CERT_FILE: ${TLS_CERT_FILE}
+      TLS_KEY_FILE: ${TLS_KEY_FILE}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/etc/caddy/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web: {condition: service_healthy}
+      admin-web: {condition: service_healthy}
+      api: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [edge]
+    logging: *logging
+    deploy:
+      resources:
+        limits: {memory: 256M, cpus: "1"}
+
+  web:
+    build: {context: ../web}
+    restart: unless-stopped
+    environment:
+      API_INTERNAL_URL: ${API_INTERNAL_URL}
+      SITE_URL: ${SITE_URL}
+      APP_URL: ${APP_URL}
+      SENTRY_DSN_WEB: ${SENTRY_DSN_WEB}
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks: [edge]
+    logging: *logging
+    deploy:
+      resources:
+        limits: {memory: 1G, cpus: "1"}
+
+  admin-web:
+    build: {context: ../admin-web}
+    restart: unless-stopped
+    environment:
+      API_INTERNAL_URL: ${API_INTERNAL_URL}
+      ADMIN_URL: ${ADMIN_URL}
+      SENTRY_DSN_WEB: ${SENTRY_DSN_WEB}
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks: [edge]
+    logging: *logging
+    deploy:
+      resources:
+        limits: {memory: 512M, cpus: "0.5"}
+
+  api:
+    build: {context: .., dockerfile: deploy/Dockerfile.backend}
+    image: tradelens-backend:latest
+    restart: unless-stopped
+    command: ["uvicorn", "tradelens.app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--proxy-headers"]
+    environment:
+      <<: *backend-env
+      SITE_HOST: ${SITE_HOST}
+      APP_HOST: ${APP_HOST}
+      ADMIN_HOST: ${ADMIN_HOST}
+      ENABLE_API_DOCS: ${ENABLE_API_DOCS}
+      SESSION_SECRET: ${SESSION_SECRET}
+      CSRF_SECRET: ${CSRF_SECRET}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY}
+      SESSION_IDLE_DAYS: ${SESSION_IDLE_DAYS}
+      ADMIN_SESSION_HOURS: ${ADMIN_SESSION_HOURS}
+      MAX_SESSIONS_PER_USER: ${MAX_SESSIONS_PER_USER}
+      EMAIL_VERIFY_TTL_HOURS: ${EMAIL_VERIFY_TTL_HOURS}
+      PASSWORD_RESET_TTL_MINUTES: ${PASSWORD_RESET_TTL_MINUTES}
+      RATE_LIMIT_LOGIN_PER_ACCOUNT_PER_MIN: ${RATE_LIMIT_LOGIN_PER_ACCOUNT_PER_MIN}
+      RATE_LIMIT_LOGIN_PER_IP_PER_MIN: ${RATE_LIMIT_LOGIN_PER_IP_PER_MIN}
+      RATE_LIMIT_API_PER_USER_PER_MIN: ${RATE_LIMIT_API_PER_USER_PER_MIN}
+      RATE_LIMIT_CUSTOM_CHART_PER_USER_PER_MIN: ${RATE_LIMIT_CUSTOM_CHART_PER_USER_PER_MIN}
+      RATE_LIMIT_ANON_PER_IP_PER_MIN: ${RATE_LIMIT_ANON_PER_IP_PER_MIN}
+      SSE_MAX_STREAMS_PER_USER: ${SSE_MAX_STREAMS_PER_USER}
+      SSE_PRICE_THROTTLE_MS: ${SSE_PRICE_THROTTLE_MS}
+      CF_ACCESS_ENABLED: ${CF_ACCESS_ENABLED}
+      CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN}
+      CF_ACCESS_AUD: ${CF_ACCESS_AUD}
+      RAZORPAY_MODE: ${RAZORPAY_MODE}
+      RAZORPAY_KEY_ID_TEST: ${RAZORPAY_KEY_ID_TEST}
+      RAZORPAY_KEY_SECRET_TEST: ${RAZORPAY_KEY_SECRET_TEST}
+      RAZORPAY_WEBHOOK_SECRET_TEST: ${RAZORPAY_WEBHOOK_SECRET_TEST}
+      RAZORPAY_KEY_ID_LIVE: ${RAZORPAY_KEY_ID_LIVE}
+      RAZORPAY_KEY_SECRET_LIVE: ${RAZORPAY_KEY_SECRET_LIVE}
+      RAZORPAY_WEBHOOK_SECRET_LIVE: ${RAZORPAY_WEBHOOK_SECRET_LIVE}
+      REFUND_WINDOW_DAYS: ${REFUND_WINDOW_DAYS}
+      PAYMENT_GRACE_DAYS: ${PAYMENT_GRACE_DAYS}
+      FOUNDER_RESERVATION_MINUTES: ${FOUNDER_RESERVATION_MINUTES}
+      ADMIN_ALERT_EMAILS: ${ADMIN_ALERT_EMAILS}
+      ADMIN_ALERT_MIN_INTERVAL_MINUTES: ${ADMIN_ALERT_MIN_INTERVAL_MINUTES}
+      HEALTH_CHECK_INTERVAL_SECONDS: ${HEALTH_CHECK_INTERVAL_SECONDS}
+      SERIES_DELAYED_ALERT_MINUTES: ${SERIES_DELAYED_ALERT_MINUTES}
+    volumes:
+      - ../config:/app/config:ro
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).status == 200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks: [edge, backend, egress]
+    logging: *logging
+    deploy:
+      resources:
+        limits: {memory: 2G, cpus: "2"}
+
+  worker:
+    image: tradelens-backend:latest
+    restart: unless-stopped
+    command: ["python", "-m", "tradelens.worker.main"]
+    environment:
+      <<: *backend-env
+      OANDA_ENV: ${OANDA_ENV}
+      OANDA_API_TOKEN: ${OANDA_API_TOKEN}
+      OANDA_ACCOUNT_ID: ${OANDA_ACCOUNT_ID}
+      OANDA_REST_URL: ${OANDA_REST_URL}
+      OANDA_STREAM_URL: ${OANDA_STREAM_URL}
+      SCHEDULER_OFFSET_SECONDS: ${SCHEDULER_OFFSET_SECONDS}
+      CANDLE_RETRY_INTERVAL_SECONDS: ${CANDLE_RETRY_INTERVAL_SECONDS}
+      CANDLE_RETRY_MAX_SECONDS: ${CANDLE_RETRY_MAX_SECONDS}
+      BACKFILL_MIN_CANDLES: ${BACKFILL_MIN_CANDLES}
+      SSE_PRICE_THROTTLE_MS: ${SSE_PRICE_THROTTLE_MS}
+      PAYMENT_GRACE_DAYS: ${PAYMENT_GRACE_DAYS}
+      FOUNDER_RESERVATION_MINUTES: ${FOUNDER_RESERVATION_MINUTES}
+    volumes:
+      - ../config:/app/config:ro
+    depends_on:
+      api: {condition: service_started}
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-m", "tradelens.worker.healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks: [backend, egress]
+    logging: *logging
+    deploy:
+      resources:
+        limits: {memory: 3G, cpus: "2"}
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    command: ["postgres", "-c", "shared_buffers=1GB", "-c", "effective_cache_size=4GB", "-c", "timezone=UTC"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      APP_DB_USER: ${APP_DB_USER}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [backend]
+    logging: *logging
+    deploy:
+      resources:
+        limits: {memory: 4G, cpus: "2"}
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\" --appendonly yes --maxmemory 256mb --maxmemory-policy volatile-lru"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [backend]
+    logging: *logging
+    deploy:
+      resources:
+        limits: {memory: 512M, cpus: "0.5"}
+
+networks:
+  edge: {}
+  backend:
+    internal: true
+  egress: {}
+
+volumes:
+  pgdata: {}
+  redisdata: {}
+  caddy_data: {}
+  caddy_config: {}

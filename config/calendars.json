@@ -1,0 +1,27 @@
+{
+  "_comment": "Detailed Design 6.5. Times are New York local; dow 0 = Sunday. The metal/energy break applies Monday-Thursday; Friday 17:00 is the week close.",
+  "calendars": [
+    {
+      "code": "fx_24x5",
+      "tz": "America/New_York",
+      "week_open_dow": 0,
+      "week_open_time": "17:00",
+      "week_close_dow": 5,
+      "week_close_time": "17:00",
+      "daily_break_start": null,
+      "daily_break_end": null,
+      "closures": []
+    },
+    {
+      "code": "metal_energy_break",
+      "tz": "America/New_York",
+      "week_open_dow": 0,
+      "week_open_time": "18:00",
+      "week_close_dow": 5,
+      "week_close_time": "17:00",
+      "daily_break_start": "17:00",
+      "daily_break_end": "18:00",
+      "closures": []
+    }
+  ]
+}

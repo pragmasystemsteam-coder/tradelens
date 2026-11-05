@@ -1,0 +1,29 @@
+# Ruff: lint + format for all Python (coding standards: PEP 8, line length 100).
+line-length = 100
+target-version = "py312"
+src = ["engine/src", "backend/src"]
+extend-exclude = ["web", "admin-web"]
+
+[lint]
+select = [
+  "E", "W", "F", "I", "N", "UP", "B", "SIM", "C4", "RUF", "RET", "PT",
+  "D",       # Google-style docstrings on public modules, classes and functions
+  "ANN",     # full type hints
+  "T20",     # no print
+  "BLE",     # no blind except
+  "S",       # security (bandit)
+  "PLR2004", # no magic numbers
+]
+ignore = ["D105", "D107"]
+
+[lint.pydocstyle]
+convention = "google"
+
+[lint.isort]
+known-first-party = ["tradelens", "tradelens_engine"]
+
+[lint.per-file-ignores]
+# Tests: pytest style rules relaxed; `l` is the OHLC low, as in the design.
+"**/tests/**" = ["D", "ANN", "S101", "S105", "S106", "S108", "S608", "PLR2004", "PT006", "PT011", "PT018", "E741"]
+"backend/migrations/**" = ["E501"]
+"backend/tests/integration/**" = ["E501"]  # SQL literals

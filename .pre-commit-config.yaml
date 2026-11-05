@@ -1,0 +1,63 @@
+# pre-commit install   (run inside the activated .venv so the Python tools are on PATH)
+# Hooks use the project's own tool versions (language: system), so CI and laptops agree.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: ruff format
+        entry: ruff format
+        language: system
+        types: [python]
+      - id: ruff-check
+        name: ruff check
+        entry: ruff check --fix
+        language: system
+        types: [python]
+      - id: mypy-engine
+        name: mypy (engine, strict)
+        entry: mypy --config-file engine/pyproject.toml engine/src
+        language: system
+        pass_filenames: false
+        files: ^engine/
+      - id: mypy-backend
+        name: mypy (backend)
+        entry: mypy --config-file backend/pyproject.toml backend/src
+        language: system
+        pass_filenames: false
+        files: ^backend/
+      - id: import-contracts
+        name: import contracts (ADR-0001)
+        entry: lint-imports --config backend/pyproject.toml
+        language: system
+        pass_filenames: false
+        files: ^(backend|engine)/
+      - id: engine-purity
+        name: engine purity
+        entry: lint-imports --config engine/pyproject.toml
+        language: system
+        pass_filenames: false
+        files: ^engine/
+      - id: eslint-web
+        name: eslint (web)
+        entry: npm --prefix web run lint
+        language: system
+        pass_filenames: false
+        files: ^web/
+      - id: prettier-web
+        name: prettier (web)
+        entry: npm --prefix web run format:check
+        language: system
+        pass_filenames: false
+        files: ^web/
+      - id: eslint-admin-web
+        name: eslint (admin-web)
+        entry: npm --prefix admin-web run lint
+        language: system
+        pass_filenames: false
+        files: ^admin-web/
+      - id: prettier-admin-web
+        name: prettier (admin-web)
+        entry: npm --prefix admin-web run format:check
+        language: system
+        pass_filenames: false
+        files: ^admin-web/

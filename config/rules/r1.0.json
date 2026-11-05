@@ -1,0 +1,145 @@
+{
+  "_comment": "Detailed Design 6.3. Preset values are the developer's placeholders until the client supplies defaults (D-03).",
+  "version": "r1.0",
+  "scoring_version": "s1.0",
+  "note": "Release 1 baseline (CD-14..CD-27)",
+  "user": {
+    "internal_pivot": null,
+    "external_pivot": 10,
+    "fvg_min_m": 0,
+    "eq_tol_m": 100,
+    "displacement": "normal",
+    "zone_max_age": 100,
+    "zone_max_retests": 3,
+    "counter_trend": "warn"
+  },
+  "constants": {
+    "bos_buffer_m": 0,
+    "sweep_window_bars": 20,
+    "sweep_reclaim": "same_candle",
+    "ob_lookback": 10,
+    "disp_break_window": 3,
+    "level_max_age": 300,
+    "atr_period": 14,
+    "body_ratio_permille": 650,
+    "displacement": {
+      "normal": {
+        "single_m": 1500,
+        "multi_m": 2000
+      },
+      "strong": {
+        "single_m": 2000,
+        "multi_m": 2500
+      }
+    },
+    "sessions_ny": {
+      "asian": [
+        "19:00",
+        "03:00"
+      ],
+      "london": [
+        "03:00",
+        "12:00"
+      ],
+      "new_york": [
+        "08:00",
+        "17:00"
+      ]
+    }
+  },
+  "weights": {
+    "q_permille": 600,
+    "c_permille": 400,
+    "high_quality": 60,
+    "q": {
+      "break": [
+        25,
+        15
+      ],
+      "sweep": 20,
+      "fvg": 20,
+      "ob_fresh": 15,
+      "room": {
+        "full_m": 2000,
+        "full": 15,
+        "part_m": 1000,
+        "part": 8
+      },
+      "spread_session": 5
+    },
+    "c": {
+      "htf_trend": [
+        40,
+        20
+      ],
+      "htf_zone": 30,
+      "ltf_confirm": 20,
+      "no_conflict": {
+        "points": 10,
+        "distance_m": 1000
+      }
+    }
+  },
+  "presets": [
+    {
+      "code": "default",
+      "name": "Default",
+      "sort_order": 0,
+      "user": {
+        "internal_pivot": null,
+        "external_pivot": 10,
+        "fvg_min_m": 0,
+        "eq_tol_m": 100,
+        "displacement": "normal",
+        "zone_max_age": 100,
+        "zone_max_retests": 3,
+        "counter_trend": "warn"
+      }
+    },
+    {
+      "code": "scalping",
+      "name": "Scalping",
+      "sort_order": 1,
+      "user": {
+        "internal_pivot": 2,
+        "external_pivot": 8,
+        "fvg_min_m": 0,
+        "eq_tol_m": 100,
+        "displacement": "normal",
+        "zone_max_age": 50,
+        "zone_max_retests": 2,
+        "counter_trend": "warn"
+      }
+    },
+    {
+      "code": "intraday",
+      "name": "Intraday",
+      "sort_order": 2,
+      "user": {
+        "internal_pivot": null,
+        "external_pivot": 10,
+        "fvg_min_m": 0,
+        "eq_tol_m": 100,
+        "displacement": "normal",
+        "zone_max_age": 100,
+        "zone_max_retests": 3,
+        "counter_trend": "warn"
+      }
+    },
+    {
+      "code": "swing",
+      "name": "Swing",
+      "sort_order": 3,
+      "user": {
+        "internal_pivot": 5,
+        "external_pivot": 15,
+        "fvg_min_m": 250,
+        "eq_tol_m": 100,
+        "displacement": "normal",
+        "zone_max_age": 200,
+        "zone_max_retests": 3,
+        "counter_trend": "warn"
+      }
+    }
+  ]
+}

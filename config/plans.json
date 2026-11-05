@@ -1,0 +1,105 @@
+{
+  "_comment": "Detailed Design 6.2 / CR-003. Seeded with migration 0002 (Increment 2, DD-8). Money in minor units.",
+  "plans": [
+    {
+      "code": "free",
+      "name": "Free",
+      "is_paid": false,
+      "is_default": true,
+      "tier_rank": 0,
+      "limits": {
+        "asset_classes": [
+          "forex"
+        ],
+        "mtf_detail": "strip",
+        "chart_history_candles": 500,
+        "max_watchlists": 1,
+        "max_watchlist_items": 11,
+        "max_alert_rules": 3,
+        "custom_settings": false,
+        "max_profiles": 0,
+        "custom_watchlist_pairs_max": 0
+      }
+    },
+    {
+      "code": "pro_monthly",
+      "name": "Pro monthly",
+      "is_paid": true,
+      "tier_rank": 1,
+      "trial_days": 15,
+      "limits": "@pro",
+      "prices": {
+        "INR": {
+          "amount_minor": 99900,
+          "interval": "month"
+        },
+        "USD": {
+          "amount_minor": 1999,
+          "interval": "month"
+        }
+      }
+    },
+    {
+      "code": "pro_annual",
+      "name": "Pro annual",
+      "is_paid": true,
+      "tier_rank": 2,
+      "limits": "@pro",
+      "prices": {
+        "INR": {
+          "amount_minor": 999900,
+          "interval": "year"
+        },
+        "USD": {
+          "amount_minor": 19900,
+          "interval": "year"
+        }
+      }
+    },
+    {
+      "code": "pro_annual_founder",
+      "name": "Pro annual (founder)",
+      "is_paid": true,
+      "tier_rank": 2,
+      "renews_into": "pro_annual",
+      "is_public": true,
+      "limits": "@pro",
+      "prices": {
+        "INR": {
+          "amount_minor": 799900,
+          "interval": "year"
+        },
+        "USD": {
+          "amount_minor": 15900,
+          "interval": "year"
+        }
+      },
+      "founder_cap": 100
+    }
+  ],
+  "limit_sets": {
+    "pro": {
+      "asset_classes": [
+        "forex",
+        "metal",
+        "energy"
+      ],
+      "mtf_detail": "full",
+      "chart_history_candles": 2000,
+      "max_watchlists": 3,
+      "max_watchlist_items": 11,
+      "max_alert_rules": 20,
+      "custom_settings": true,
+      "max_profiles": 3,
+      "custom_watchlist_pairs_max": 7
+    }
+  },
+  "country_currency": {
+    "IN": "INR",
+    "*": "USD"
+  },
+  "razorpay_plan_ids": {
+    "test": {},
+    "live": {}
+  }
+}

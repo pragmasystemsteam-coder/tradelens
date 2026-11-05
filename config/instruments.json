@@ -1,0 +1,115 @@
+{
+  "_comment": "Detailed Design 6.4. Commodity scales are to be verified against OANDA (make verify-instruments); normal_spread values are placeholders replaced on day 4 with measured medians.",
+  "instruments": [
+    {
+      "code": "EUR_USD",
+      "display_name": "EUR/USD",
+      "asset_class": "forex",
+      "price_scale": 5,
+      "pip_scale": 4,
+      "normal_spread": 12,
+      "calendar_code": "fx_24x5",
+      "sort_order": 0
+    },
+    {
+      "code": "GBP_USD",
+      "display_name": "GBP/USD",
+      "asset_class": "forex",
+      "price_scale": 5,
+      "pip_scale": 4,
+      "normal_spread": 16,
+      "calendar_code": "fx_24x5",
+      "sort_order": 1
+    },
+    {
+      "code": "USD_JPY",
+      "display_name": "USD/JPY",
+      "asset_class": "forex",
+      "price_scale": 3,
+      "pip_scale": 2,
+      "normal_spread": 14,
+      "calendar_code": "fx_24x5",
+      "sort_order": 2
+    },
+    {
+      "code": "USD_CHF",
+      "display_name": "USD/CHF",
+      "asset_class": "forex",
+      "price_scale": 5,
+      "pip_scale": 4,
+      "normal_spread": 18,
+      "calendar_code": "fx_24x5",
+      "sort_order": 3
+    },
+    {
+      "code": "AUD_USD",
+      "display_name": "AUD/USD",
+      "asset_class": "forex",
+      "price_scale": 5,
+      "pip_scale": 4,
+      "normal_spread": 14,
+      "calendar_code": "fx_24x5",
+      "sort_order": 4
+    },
+    {
+      "code": "USD_CAD",
+      "display_name": "USD/CAD",
+      "asset_class": "forex",
+      "price_scale": 5,
+      "pip_scale": 4,
+      "normal_spread": 18,
+      "calendar_code": "fx_24x5",
+      "sort_order": 5
+    },
+    {
+      "code": "NZD_USD",
+      "display_name": "NZD/USD",
+      "asset_class": "forex",
+      "price_scale": 5,
+      "pip_scale": 4,
+      "normal_spread": 20,
+      "calendar_code": "fx_24x5",
+      "sort_order": 6
+    },
+    {
+      "code": "XAU_USD",
+      "display_name": "Gold",
+      "asset_class": "metal",
+      "price_scale": 3,
+      "pip_scale": 2,
+      "normal_spread": 400,
+      "calendar_code": "metal_energy_break",
+      "sort_order": 7
+    },
+    {
+      "code": "XAG_USD",
+      "display_name": "Silver",
+      "asset_class": "metal",
+      "price_scale": 5,
+      "pip_scale": 4,
+      "normal_spread": 3000,
+      "calendar_code": "metal_energy_break",
+      "sort_order": 8
+    },
+    {
+      "code": "WTICO_USD",
+      "display_name": "WTI crude oil",
+      "asset_class": "energy",
+      "price_scale": 3,
+      "pip_scale": 2,
+      "normal_spread": 40,
+      "calendar_code": "metal_energy_break",
+      "sort_order": 9
+    },
+    {
+      "code": "BCO_USD",
+      "display_name": "Brent crude oil",
+      "asset_class": "energy",
+      "price_scale": 3,
+      "pip_scale": 2,
+      "normal_spread": 40,
+      "calendar_code": "metal_energy_break",
+      "sort_order": 10
+    }
+  ]
+}
