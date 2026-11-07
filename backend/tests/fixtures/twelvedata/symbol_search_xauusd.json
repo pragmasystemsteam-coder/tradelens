@@ -1,0 +1,16 @@
+{
+  "_comment": "Twelve Data /symbol_search response format.",
+  "data": [
+    {
+      "symbol": "XAU/USD",
+      "instrument_name": "XAU/USD",
+      "exchange": "PHYSICAL CURRENCY",
+      "mic_code": "",
+      "exchange_timezone": "UTC",
+      "instrument_type": "Precious Metal",
+      "country": "",
+      "currency": "USD"
+    }
+  ],
+  "status": "ok"
+}

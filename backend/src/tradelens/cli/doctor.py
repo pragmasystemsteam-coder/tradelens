@@ -17,10 +17,12 @@ REQUIRED_KEYS: tuple[str, ...] = (
     "DATABASE_URL", "DATABASE_MIGRATION_URL", "REDIS_PASSWORD", "REDIS_URL",
     "SESSION_SECRET", "CSRF_SECRET", "TOTP_ENCRYPTION_KEY",
     "CF_ACCESS_ENABLED", "CF_ACCESS_TEAM_DOMAIN", "CF_ACCESS_AUD",
-    "OANDA_ENV", "OANDA_API_TOKEN", "OANDA_ACCOUNT_ID", "OANDA_REST_URL", "OANDA_STREAM_URL",
+    "MARKET_DATA_PROVIDER",
     "RAZORPAY_MODE", "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "EMAIL_FROM_ADDRESS",
     "API_INTERNAL_URL", "SITE_URL", "APP_URL", "ADMIN_URL", "TLS_CERT_FILE", "TLS_KEY_FILE",
 )  # fmt: skip
+# OANDA joins this table when its adapter exists (its keys stay in .env.example).
+PROVIDER_KEYS: dict[str, tuple[str, ...]] = {"twelvedata": ("TWELVEDATA_API_KEY",), "fake": ()}
 EXIT_OK, EXIT_FAILED = 0, 1
 
 
@@ -68,6 +70,25 @@ def _razorpay_errors(env: Mapping[str, str]) -> list[str]:
     return errors
 
 
+def _provider_errors(env: Mapping[str, str]) -> list[str]:
+    provider = env.get("MARKET_DATA_PROVIDER", "").strip()
+    if not provider:
+        return []  # reported as a missing required key
+    if provider not in PROVIDER_KEYS:
+        return [f"MARKET_DATA_PROVIDER: must be one of {sorted(PROVIDER_KEYS)}"]
+    errors = [
+        f"{key}: required when MARKET_DATA_PROVIDER={provider}"
+        for key in PROVIDER_KEYS[provider]
+        if not env.get(key, "").strip()
+    ]
+    if env.get("APP_ENV") == "production":
+        if provider == "fake":
+            errors.append("MARKET_DATA_PROVIDER: fake data is not allowed in production")
+        elif env.get("TWELVEDATA_LIVE_INSTRUMENTS", "").strip() != "all":
+            errors.append("TWELVEDATA_LIVE_INSTRUMENTS: must be 'all' in production (no fake data)")
+    return errors
+
+
 def check_env(env: Mapping[str, str]) -> list[str]:
     """Find configuration errors that must stop a deployment.
 
@@ -93,6 +114,7 @@ def check_env(env: Mapping[str, str]) -> list[str]:
         if env_bool(env.get("ENABLE_API_DOCS")):
             errors.append("ENABLE_API_DOCS: must be false in production")
     errors += _razorpay_errors(env)
+    errors += _provider_errors(env)
     return errors
 
 

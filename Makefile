@@ -6,6 +6,8 @@ ifeq ($(OS),Windows_NT)
 PY_BOOT ?= py -3.12
 PY := .venv/Scripts/python.exe
 BIN := .venv/Scripts
+# Git Bash rewrites container paths such as /app/config into C:/...; stop it for docker calls.
+export MSYS_NO_PATHCONV := 1
 else
 PY_BOOT ?= python3.12
 PY := .venv/bin/python
@@ -22,8 +24,8 @@ ALEMBIC := $(PY) -m alembic -c backend/alembic.ini
         build up down logs health psql migrate seed init
 
 help:
-	@echo "Local:     venv install test test-engine test-api lint lint-imports typecheck check migrate-sql doctor"
-	@echo "Container: init build up down logs health psql migrate seed"
+	@echo "Local:     venv install test test-engine test-api lint lint-imports typecheck check migrate-sql doctor verify-instruments web-check"
+	@echo "Container: init build up down logs health psql migrate seed test-db"
 
 venv:
 	$(PY_BOOT) -m venv .venv
@@ -69,6 +71,20 @@ migrate-sql:
 
 doctor:
 	$(PY) -m tradelens.cli doctor deploy/.env
+
+# Checks config/instruments.json against the market-data provider (offline checks always;
+# LIVE=1 also asks Twelve Data's symbol search, 1 credit per instrument).
+verify-instruments:
+	$(PY) -m tradelens.cli verify-instruments config $(if $(LIVE),--live,)
+
+# Type-check, lint and build both Next.js apps.
+web-check:
+	cd web && npm ci --no-audit --no-fund && npm run typecheck && npm run lint && npm run build
+	cd admin-web && npm ci --no-audit --no-fund && npm run typecheck && npm run lint && npm run build
+
+# Integration tests against a throwaway PostgreSQL 16 on 127.0.0.1:55432 (always removed afterwards).
+test-db:
+	$(PY) scripts/test_db.py
 
 # ---- container targets ---------------------------------------------------
 build:

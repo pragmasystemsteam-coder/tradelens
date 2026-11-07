@@ -1,0 +1,16 @@
+{
+  "_comment": "Twelve Data /symbol_search response format.",
+  "data": [
+    {
+      "symbol": "EUR/USD",
+      "instrument_name": "EUR/USD",
+      "exchange": "PHYSICAL CURRENCY",
+      "mic_code": "",
+      "exchange_timezone": "UTC",
+      "instrument_type": "Physical Currency",
+      "country": "",
+      "currency": "USD"
+    }
+  ],
+  "status": "ok"
+}
