@@ -6,14 +6,17 @@ reach the database so a typo cannot go live.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Connection
 
 from tradelens.modules.market_data import repository
+from tradelens.modules.market_data.calendar import Calendar
 
 TIMEFRAMES: tuple[str, ...] = ("5m", "15m", "1h", "4h", "1d")
 ASSET_CLASSES = frozenset({"forex", "metal", "energy"})
@@ -47,6 +50,9 @@ INSTRUMENT_KEYS = frozenset(
     }
 )
 
+OPTIONAL_INSTRUMENT_KEYS = frozenset({"provider_symbols"})  # not stored; used by adapters (CR-004)
+PROVIDERS = frozenset({"twelvedata", "oanda"})
+
 Row = dict[str, Any]
 
 
@@ -63,8 +69,13 @@ class ReferenceRows:
     series_status: tuple[Row, ...]
 
 
-def _check_keys(kind: str, item: Mapping[str, Any], expected: frozenset[str]) -> None:
-    unknown, missing = set(item) - expected, expected - set(item)
+def _check_keys(
+    kind: str,
+    item: Mapping[str, Any],
+    expected: frozenset[str],
+    optional: frozenset[str] = frozenset(),
+) -> None:
+    unknown, missing = set(item) - expected - optional, expected - set(item)
     if unknown or missing:
         raise ReferenceDataError(
             f"{kind} {item.get('code')!r}: unknown keys {sorted(unknown)}, "
@@ -115,8 +126,9 @@ def _calendar_row(item: Mapping[str, Any]) -> Row:
 
 
 def _instrument_row(item: Mapping[str, Any], calendar_codes: set[str]) -> Row:
-    _check_keys("instrument", item, INSTRUMENT_KEYS)
+    _check_keys("instrument", item, INSTRUMENT_KEYS, OPTIONAL_INSTRUMENT_KEYS)
     code = item["code"]
+    _provider_symbols(code, item.get("provider_symbols", {}))
     price_scale = _int("instrument", code, "price_scale", item["price_scale"], 0, MAX_PRICE_SCALE)
     pip_scale = _int("instrument", code, "pip_scale", item["pip_scale"], 0, price_scale)
     if item["asset_class"] not in ASSET_CLASSES:
@@ -136,6 +148,17 @@ def _instrument_row(item: Mapping[str, Any], calendar_codes: set[str]) -> Row:
         "sort_order": _int("instrument", code, "sort_order", item["sort_order"], 0),
         "active": True,
     }
+
+
+def _provider_symbols(code: str, symbols: object) -> dict[str, str]:
+    if not isinstance(symbols, Mapping) or not all(
+        name in PROVIDERS and isinstance(value, str) and value.strip()
+        for name, value in symbols.items()
+    ):
+        raise ReferenceDataError(
+            f"instrument {code!r}: provider_symbols must map {sorted(PROVIDERS)} to symbols"
+        )
+    return dict(symbols)
 
 
 def _unique(kind: str, rows: Sequence[Row]) -> None:
@@ -185,3 +208,46 @@ def save_reference_rows(conn: Connection, rows: ReferenceRows) -> None:
     repository.insert_calendars(conn, rows.calendars)
     repository.insert_instruments(conn, rows.instruments)
     repository.insert_series_status(conn, rows.series_status)
+
+
+@dataclass(frozen=True, slots=True)
+class InstrumentSpec:
+    """What the data pipeline needs to know about one instrument (from config/, validated)."""
+
+    code: str
+    price_scale: int
+    pip_scale: int
+    calendar: Calendar
+    twelvedata_symbol: str | None
+
+
+def load_instrument_specs(config_dir: Path) -> list[InstrumentSpec]:
+    """Read and validate config/calendars.json and config/instruments.json.
+
+    Args:
+        config_dir: The repository ``config`` directory.
+
+    Returns:
+        One spec per instrument, in config order.
+
+    Raises:
+        ReferenceDataError: If the config is invalid (same checks as the seed).
+    """
+    calendars_doc = json.loads((config_dir / "calendars.json").read_text(encoding="utf-8"))
+    instruments_doc = json.loads((config_dir / "instruments.json").read_text(encoding="utf-8"))
+    rows = build_reference_rows(calendars_doc, instruments_doc)
+    calendars = {row["code"]: Calendar.from_row(row) for row in calendars_doc["calendars"]}
+    by_code = {item["code"]: item for item in instruments_doc["instruments"]}
+    specs = []
+    for row in rows.instruments:
+        symbols = by_code[row["code"]].get("provider_symbols", {})
+        specs.append(
+            InstrumentSpec(
+                code=row["code"],
+                price_scale=row["price_scale"],
+                pip_scale=row["pip_scale"],
+                calendar=calendars[row["calendar_code"]],
+                twelvedata_symbol=symbols.get("twelvedata"),
+            )
+        )
+    return specs

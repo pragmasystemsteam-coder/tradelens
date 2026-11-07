@@ -1,0 +1,11 @@
+{
+  "_comment": "Twelve Data error body format.",
+  "code": 400,
+  "message": "**symbol** not found: XXX/YYY. Please specify it correctly according to API Documentation.",
+  "status": "error",
+  "meta": {
+    "symbol": "XXX/YYY",
+    "interval": "5min",
+    "exchange": ""
+  }
+}

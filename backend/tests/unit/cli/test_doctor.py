@@ -83,3 +83,33 @@ def test_doctor_fails_without_docker(tmp_path, repo, monkeypatch):
 
     monkeypatch.setattr("tradelens.cli.doctor.docker_available", lambda: False)
     assert main([write_env(tmp_path / "good.env", filled_env(repo))]) == 1
+
+
+def test_provider_keys_follow_market_data_provider(repo):
+    """CR-004: Twelve Data in development needs its key; OANDA keys only when OANDA is chosen."""
+    env = {k: v.replace("change-me", "x" * 32) for k, v in example_env(repo).items()}
+    assert env["MARKET_DATA_PROVIDER"] == "twelvedata"
+    env["TWELVEDATA_API_KEY"] = ""
+    assert any("TWELVEDATA_API_KEY" in e for e in check_env(env))
+    env["MARKET_DATA_PROVIDER"] = "oanda"  # not implemented yet, so the worker would refuse it
+    assert any("MARKET_DATA_PROVIDER" in e for e in check_env(env))
+    env["MARKET_DATA_PROVIDER"] = "fake"
+    env["OANDA_API_TOKEN"] = ""
+    assert not any("OANDA" in e or "TWELVEDATA" in e for e in check_env(env))
+    env["MARKET_DATA_PROVIDER"] = "carrier-pigeon"
+    assert any("MARKET_DATA_PROVIDER" in e for e in check_env(env))
+
+
+def test_fake_provider_refused_in_production(repo):
+    env = {k: v.replace("change-me", "x" * 32) for k, v in example_env(repo).items()}
+    env.update(
+        APP_ENV="production",
+        CF_ACCESS_ENABLED="true",
+        ENABLE_API_DOCS="false",
+        MARKET_DATA_PROVIDER="fake",
+    )
+    assert any("MARKET_DATA_PROVIDER" in e for e in check_env(env))
+    env["MARKET_DATA_PROVIDER"] = "twelvedata"
+    assert any("TWELVEDATA_LIVE_INSTRUMENTS" in e for e in check_env(env))
+    env["TWELVEDATA_LIVE_INSTRUMENTS"] = "all"
+    assert not any("TWELVEDATA_LIVE" in e or "MARKET_DATA" in e for e in check_env(env))

@@ -1,5 +1,5 @@
 {
-  "_comment": "Detailed Design 6.4. Commodity scales are to be verified against OANDA (make verify-instruments); normal_spread values are placeholders replaced on day 4 with measured medians.",
+  "_comment": "Detailed Design 6.4. Commodity scales are to be verified against OANDA (make verify-instruments); normal_spread values are placeholders replaced on day 4 with measured medians. provider_symbols.twelvedata is the Twelve Data symbol (CR-004); WTI/USD and XBR/USD are to be confirmed with make verify-instruments LIVE=1.",
   "instruments": [
     {
       "code": "EUR_USD",
@@ -9,7 +9,10 @@
       "pip_scale": 4,
       "normal_spread": 12,
       "calendar_code": "fx_24x5",
-      "sort_order": 0
+      "sort_order": 0,
+      "provider_symbols": {
+        "twelvedata": "EUR/USD"
+      }
     },
     {
       "code": "GBP_USD",
@@ -19,7 +22,10 @@
       "pip_scale": 4,
       "normal_spread": 16,
       "calendar_code": "fx_24x5",
-      "sort_order": 1
+      "sort_order": 1,
+      "provider_symbols": {
+        "twelvedata": "GBP/USD"
+      }
     },
     {
       "code": "USD_JPY",
@@ -29,7 +35,10 @@
       "pip_scale": 2,
       "normal_spread": 14,
       "calendar_code": "fx_24x5",
-      "sort_order": 2
+      "sort_order": 2,
+      "provider_symbols": {
+        "twelvedata": "USD/JPY"
+      }
     },
     {
       "code": "USD_CHF",
@@ -39,7 +48,10 @@
       "pip_scale": 4,
       "normal_spread": 18,
       "calendar_code": "fx_24x5",
-      "sort_order": 3
+      "sort_order": 3,
+      "provider_symbols": {
+        "twelvedata": "USD/CHF"
+      }
     },
     {
       "code": "AUD_USD",
@@ -49,7 +61,10 @@
       "pip_scale": 4,
       "normal_spread": 14,
       "calendar_code": "fx_24x5",
-      "sort_order": 4
+      "sort_order": 4,
+      "provider_symbols": {
+        "twelvedata": "AUD/USD"
+      }
     },
     {
       "code": "USD_CAD",
@@ -59,7 +74,10 @@
       "pip_scale": 4,
       "normal_spread": 18,
       "calendar_code": "fx_24x5",
-      "sort_order": 5
+      "sort_order": 5,
+      "provider_symbols": {
+        "twelvedata": "USD/CAD"
+      }
     },
     {
       "code": "NZD_USD",
@@ -69,7 +87,10 @@
       "pip_scale": 4,
       "normal_spread": 20,
       "calendar_code": "fx_24x5",
-      "sort_order": 6
+      "sort_order": 6,
+      "provider_symbols": {
+        "twelvedata": "NZD/USD"
+      }
     },
     {
       "code": "XAU_USD",
@@ -79,7 +100,10 @@
       "pip_scale": 2,
       "normal_spread": 400,
       "calendar_code": "metal_energy_break",
-      "sort_order": 7
+      "sort_order": 7,
+      "provider_symbols": {
+        "twelvedata": "XAU/USD"
+      }
     },
     {
       "code": "XAG_USD",
@@ -89,7 +113,10 @@
       "pip_scale": 4,
       "normal_spread": 3000,
       "calendar_code": "metal_energy_break",
-      "sort_order": 8
+      "sort_order": 8,
+      "provider_symbols": {
+        "twelvedata": "XAG/USD"
+      }
     },
     {
       "code": "WTICO_USD",
@@ -99,7 +126,10 @@
       "pip_scale": 2,
       "normal_spread": 40,
       "calendar_code": "metal_energy_break",
-      "sort_order": 9
+      "sort_order": 9,
+      "provider_symbols": {
+        "twelvedata": "WTI/USD"
+      }
     },
     {
       "code": "BCO_USD",
@@ -109,7 +139,10 @@
       "pip_scale": 2,
       "normal_spread": 40,
       "calendar_code": "metal_energy_break",
-      "sort_order": 10
+      "sort_order": 10,
+      "provider_symbols": {
+        "twelvedata": "XBR/USD"
+      }
     }
   ]
 }

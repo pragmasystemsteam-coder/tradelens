@@ -1,17 +1,29 @@
 """Public interface of market_data for other modules and the CLI (ADR-0001 section 4)."""
 
+from tradelens.modules.market_data.calendar import Calendar
+from tradelens.modules.market_data.candle_store import SqlCandleStore
+from tradelens.modules.market_data.ingest import IngestService, InstrumentReport, SeriesStatus
 from tradelens.modules.market_data.service import (
     TIMEFRAMES,
+    InstrumentSpec,
     ReferenceDataError,
     ReferenceRows,
     build_reference_rows,
+    load_instrument_specs,
     save_reference_rows,
 )
 
 __all__ = [
     "TIMEFRAMES",
+    "Calendar",
+    "IngestService",
+    "InstrumentReport",
+    "InstrumentSpec",
     "ReferenceDataError",
     "ReferenceRows",
+    "SeriesStatus",
+    "SqlCandleStore",
     "build_reference_rows",
+    "load_instrument_specs",
     "save_reference_rows",
 ]

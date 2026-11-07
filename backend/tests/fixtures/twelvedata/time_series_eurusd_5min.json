@@ -1,0 +1,55 @@
+{
+  "_comment": "Twelve Data response format (docs: /time_series, order=ASC, timezone=UTC, dp=5). Values are synthetic test data in that format, not a live recording.",
+  "meta": {
+    "symbol": "EUR/USD",
+    "interval": "5min",
+    "currency_base": "Euro",
+    "currency_quote": "US Dollar",
+    "type": "Physical Currency"
+  },
+  "values": [
+    {
+      "datetime": "2026-11-06 14:00:00",
+      "open": "1.07200",
+      "high": "1.07231",
+      "low": "1.07188",
+      "close": "1.07215"
+    },
+    {
+      "datetime": "2026-11-06 14:05:00",
+      "open": "1.07215",
+      "high": "1.07240",
+      "low": "1.07209",
+      "close": "1.07236"
+    },
+    {
+      "datetime": "2026-11-06 14:10:00",
+      "open": "1.07236",
+      "high": "1.07236",
+      "low": "1.07190",
+      "close": "1.07198"
+    },
+    {
+      "datetime": "2026-11-06 14:15:00",
+      "open": "1.07198",
+      "high": "1.07222",
+      "low": "1.07180",
+      "close": "1.0721"
+    },
+    {
+      "datetime": "2026-11-06 14:20:00",
+      "open": "1.07210",
+      "high": "1.07260",
+      "low": "1.07205",
+      "close": "1.07255"
+    },
+    {
+      "datetime": "2026-11-06 14:25:00",
+      "open": "1.07255",
+      "high": "1.07262",
+      "low": "1.07250",
+      "close": "1.07251"
+    }
+  ],
+  "status": "ok"
+}
