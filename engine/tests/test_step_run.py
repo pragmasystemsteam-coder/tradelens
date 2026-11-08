@@ -10,6 +10,7 @@ from tradelens_engine.series import SeriesState
 from tradelens_engine.settings import Settings
 from tradelens_engine.step import OutOfOrderCandle, step
 
+STRUCTURE = ("swing_high", "swing_low", "bos", "choch")
 KW = {"instrument": "EUR_USD", "timeframe": "5m", "rule_version": "r1.0"}
 
 
@@ -38,6 +39,7 @@ def test_worked_example_bull_trend_then_bos(cfg2):
     got = [
         (e.type, e.structure, e.direction, e.level, e.origin_time, e.confirm_time)
         for e in result.events
+        if e.type in STRUCTURE
     ]
     assert got == [
         ("swing_high", "internal", None, 15, c[2].open_time, c[4].close_time),
@@ -66,7 +68,8 @@ def test_events_carry_ids_and_settings_hash(cfg):
     ids = [e.id for e in result.events] + [z.id for z in result.zones]
     assert all(len(i) == 32 and int(i, 16) >= 0 for i in ids)
     assert len(ids) == len(set(ids))
-    assert {e.structure for e in result.events} == {"internal", "external"}
+    assert {e.structure for e in result.events if e.type in STRUCTURE} == {"internal", "external"}
+    assert {e.structure for e in result.events if e.type not in STRUCTURE} <= {None}
     assert {"bos", "choch"} & {e.type for e in result.events}
 
 
@@ -139,7 +142,9 @@ def test_htf_uses_pivot_5(cfg):
     events = run(
         candles[:10], cfg, instrument="EUR_USD", timeframe="4h", rule_version="r1.0"
     ).events
-    assert events == ()  # with pivot 5 the swing needs five candles on the right
+    assert [
+        e for e in events if e.type in STRUCTURE
+    ] == []  # with pivot 5 the swing needs five candles on the right
 
 
 def test_a_swing_is_never_broken_by_the_candle_that_confirms_it(cfg):
@@ -153,3 +158,16 @@ def test_a_swing_is_never_broken_by_the_candle_that_confirms_it(cfg):
             (e.structure, e.level, e.origin_time) for e in out.events if "swing" not in e.type
         }
         assert not confirmed & broken
+
+
+def test_state_has_a_version_and_old_state_is_refused(cfg):
+    from tradelens_engine.series import STATE_VERSION, StateVersionError
+
+    state = run(synthetic(50), cfg, **KW).state.to_json()
+    assert state["v"] == STATE_VERSION
+    old = {k: v for k, v in state.items() if k not in ("v", "levels")}  # a Day 2 row
+    with pytest.raises(StateVersionError):
+        SeriesState.from_json(old)
+    broken = {**state, "levels": [{"id": "x"}]}
+    with pytest.raises(ValueError, match="missing"):
+        SeriesState.from_json(broken)
