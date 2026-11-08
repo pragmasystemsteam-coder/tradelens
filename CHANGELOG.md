@@ -5,6 +5,15 @@ versions follow the increments (0.1 = Increment 1, 0.2 = Increment 2, 1.0 = Rele
 
 ## [Unreleased]
 
+### Added (Day 3, 8 Nov 2026)
+- Engine, test-first: liquidity levels (swing, PDH/PDL, PWH/PWL, Asian/London/NY sessions), EQH/EQL with ATR
+  tolerance, same-candle sweeps and breakouts; displacement; order blocks (promoted on a same-direction internal
+  break within 3 candles); zone lifecycle for OBs and FVGs (touched, 50 %, filled, invalidated, retests, expiry).
+- `step()` follows all ten steps of DD 3.4 and returns level changes and setup candidates; `SeriesState` v2
+  with a type-checked JSON codec; `build_context`, `run_multi` (close-time merge, ties to the higher timeframe).
+- Property tests on the golden file `engine/tests/data/synthetic_2000.json` (step vs run, truncation for every n,
+  forming 4H candle through `run_multi`, two-process determinism); recorded-provider event test (FR-DATA-07).
+
 ### Added (Day 2, 7 Nov 2026)
 - Market-data pipeline (CR-004): candle-provider port, Twelve Data adapter with FREE-plan credit limiter,
   symbol map in `config/instruments.json`, completed-candle rule, calendar-aware gaps and backfill

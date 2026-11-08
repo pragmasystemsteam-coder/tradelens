@@ -67,3 +67,53 @@ def synthetic(n: int, seed: int = 7) -> list[Candle]:
         out.append(bar(i, max(o, c) + up, min(o, c) - down, c, o))
         price = c
     return out
+
+
+def impulsive(n: int, seed: int = 11) -> list[Candle]:
+    """``n`` 5m candles: a random walk with occasional 1-3 candle impulses (LCG, integers only).
+
+    Impulses have big bodies and small wicks, so the series contains displacements, order
+    blocks, FVGs, sweeps and setup candidates as well as the ordinary structure events.
+    """
+    out: list[Candle] = []
+    x, price, impulse, sign = seed, 108_000, 0, 1
+    for i in range(1, n + 1):
+        x = (1103515245 * x + 12345) % 2**31
+        if impulse == 0 and x % 29 == 0:
+            impulse, sign = 1 + (x >> 8) % 3, 1 if (x >> 4) % 2 else -1
+        x = (1103515245 * x + 12345) % 2**31
+        if impulse:
+            move = sign * (60 + x % 70)
+            up, down = x % 5, (x >> 5) % 5
+            impulse -= 1
+        else:
+            move = x % 61 - 30
+            up, down = x % 13, (x // 13) % 13
+        o, c = price, price + move
+        out.append(bar(i, max(o, c) + up, min(o, c) - down, c, o))
+        price = c
+    return out
+
+
+ANCHOR = datetime(2026, 11, 9, 22, 0, tzinfo=UTC)  # 17:00 New York (winter)
+
+
+def aggregate(five: list[Candle], tf: str) -> list[Candle]:
+    """Complete ``tf`` buckets of 5m candles aligned to 17:00 New York (partial ones dropped)."""
+    from tradelens_engine.types import TIMEFRAME_MINUTES
+
+    minutes = TIMEFRAME_MINUTES[tf]
+    span = timedelta(minutes=minutes)
+    buckets: dict[int, list[Candle]] = {}
+    for c in five:
+        buckets.setdefault((c.open_time - ANCHOR) // span, []).append(c)
+    out = []
+    for idx in sorted(buckets):
+        cs = buckets[idx]
+        if len(cs) != minutes // 5:
+            continue
+        start = ANCHOR + idx * span
+        last = cs[-1]
+        out.append(Candle(start, start + span, cs[0].o, max(c.h for c in cs),
+                          min(c.l for c in cs), last.c, last.bid_c, last.ask_c))  # fmt: skip
+    return out

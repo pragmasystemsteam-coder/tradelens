@@ -1,8 +1,10 @@
 """Series state: everything ``step`` needs between candles (DD 3.2), JSON round-trippable.
 
 The worker saves ``to_json()`` in ``series_state`` after every close and reloads it with
-``from_json``; the step-vs-run test proves a reload changes nothing. Day 2 holds the window,
-ATR, both structures and recent FVGs; levels, zones and displacements follow in tasks 1.5/1.6.
+``from_json``; the step-vs-run test proves a reload changes nothing. It holds the window, ATR,
+both structures, recent FVGs, the running day/week/session boxes, active liquidity levels,
+active zones with their lifecycle counters, recent displacements with their order-block
+candidates, the OB candles already used and recent sweeps.
 """
 
 from __future__ import annotations
@@ -12,14 +14,32 @@ from datetime import datetime
 from typing import Any
 
 from tradelens_engine.arith import AtrState
+from tradelens_engine.codec import decode, encode
 from tradelens_engine.rules.fvg import Fvg
+from tradelens_engine.rules.lifecycle import ZoneState
+from tradelens_engine.rules.liquidity import Boxes, Level
+from tradelens_engine.rules.order_blocks import DispRecord
 from tradelens_engine.rules.structure import Structure
 from tradelens_engine.rules.swings import Swing
 from tradelens_engine.timefmt import iso, parse_iso
-from tradelens_engine.types import Candle
+from tradelens_engine.types import Candle, Dir
 
 WINDOW = 64  # the largest pivot (20/20) needs 41 candles
 RECENT_FVGS = 6
+STATE_VERSION = 2  # 1 = Day 2 (no levels, zones or displacements); bump on any layout change
+
+
+class StateVersionError(ValueError):
+    """Saved state written by another state layout; the worker rebuilds it from candles."""
+
+
+@dataclass(frozen=True, slots=True)
+class SweepRec:
+    """A sweep in the last ``sweep_window_bars`` + 1 bars (FR-MTF-03 "sweep" pattern)."""
+
+    direction: Dir
+    bar: int
+    event_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,10 +54,17 @@ class SeriesState:
     internal: Structure = field(default_factory=Structure)
     external: Structure = field(default_factory=Structure)
     recent_fvgs: tuple[Fvg, ...] = ()
+    boxes: Boxes = field(default_factory=Boxes)
+    levels: tuple[Level, ...] = ()
+    zones: tuple[ZoneState, ...] = ()
+    displacements: tuple[DispRecord, ...] = ()
+    ob_used: tuple[int, ...] = ()
+    recent_sweeps: tuple[SweepRec, ...] = ()
 
     def to_json(self) -> dict[str, Any]:
-        """JSON-serialisable form (integers and ISO-8601 UTC strings only)."""
+        """JSON-serialisable form (integers, booleans and ISO-8601 UTC strings only)."""
         return {
+            "v": STATE_VERSION,
             "bar_index": self.bar_index,
             "window": [_candle_out(c) for c in self.window],
             "last_open_time": _opt_iso(self.last_open_time),
@@ -46,11 +73,24 @@ class SeriesState:
             "internal": _structure_out(self.internal),
             "external": _structure_out(self.external),
             "recent_fvgs": [_fvg_out(f) for f in self.recent_fvgs],
+            "boxes": encode(self.boxes),
+            "levels": encode(self.levels),
+            "zones": encode(self.zones),
+            "displacements": encode(self.displacements),
+            "ob_used": list(self.ob_used),
+            "recent_sweeps": encode(self.recent_sweeps),
         }
 
     @classmethod
     def from_json(cls, obj: dict[str, Any]) -> SeriesState:
-        """Inverse of :meth:`to_json`."""
+        """Inverse of :meth:`to_json`.
+
+        Raises:
+            StateVersionError: If ``obj`` was written by another state layout.
+            ValueError: If ``obj`` is corrupt (missing fields or wrong types).
+        """
+        if obj.get("v") != STATE_VERSION:
+            raise StateVersionError(f"series state version {obj.get('v')!r} != {STATE_VERSION}")
         prev_close, tr_count, tr_sum, atr_k = obj["atr"]
         return cls(
             bar_index=obj["bar_index"],
@@ -61,6 +101,12 @@ class SeriesState:
             internal=_structure_in(obj["internal"]),
             external=_structure_in(obj["external"]),
             recent_fvgs=tuple(_fvg_in(f) for f in obj["recent_fvgs"]),
+            boxes=decode(Boxes, obj["boxes"]),
+            levels=decode(tuple[Level, ...], obj["levels"]),
+            zones=decode(tuple[ZoneState, ...], obj["zones"]),
+            displacements=decode(tuple[DispRecord, ...], obj["displacements"]),
+            ob_used=decode(tuple[int, ...], obj["ob_used"]),
+            recent_sweeps=decode(tuple[SweepRec, ...], obj["recent_sweeps"]),
         )
 
 

@@ -58,3 +58,28 @@ Short entry per day: done, problems, tomorrow. Plans live in `docs/superpowers/p
 - `protect_after` follows the literal spec when an older, higher level breaks later (reviewer suggested `max`); kept as specified.
 
 **Tomorrow (Day 3: tasks 1.5 to 1.7)** liquidity levels, sweeps, EQH/EQL, sessions; displacement, order blocks, zone lifecycle; property tests on golden files.
+
+## Day 3 — 8 Nov 2026 (tasks 1.5–1.8: liquidity, displacement, order blocks, zone lifecycle, multi-timeframe, property tests; branch `day3` from `day2`)
+
+**Done: engine rules (test-first; DD 3.4, 3.5, 3.6, 7.2, 7.3)**
+- `rules/liquidity.py` (FR-SMC-07/08, FR-DATA-04): swing levels from internal swings; PDH/PDL and PWH/PWL on the 17:00 New York day/ISO week; Asian, London and New York session highs/lows (5m, 15m, 1h only). A period level exists only after its period completes; the older instance ends `superseded`; at most one active level per (side, price) (a second kind joins its `kinds` and restarts its age); levels older than 300 bars end `expired`. Sweep = wick beyond and close back inside on the same candle; breakout = close beyond; a close exactly on the level is neither; a level is never swept by the candle that created it. EQH/EQL: an internal swing within `eq_tol_m` × ATR of an active swing/EQ level merges into one EQH/EQL at the extreme price (member ends `merged`; no ATR = no merge).
+- `rules/displacement.py` (FR-SMC-09): single body ≥ 1.5 × ATR and ≥ 65 % of range, else 2–3 same-colour candles with net ≥ 2.0 × ATR; single beats 2 beats 3; `strong` from the strong table; zero range or no ATR = none.
+- `rules/order_blocks.py` (FR-SMC-10): last opposing candle before the move (≤ 10 bars back, not past the latest internal swing), dropped when a later close goes through it, promoted to a full-range zone only by a same-direction internal BOS/CHoCH within 3 candles of the move's end; `pre_confirmation_touch` ignores the leg candles (and the break candle). The `detected` transition is written at promotion with the displacement close.
+- `rules/lifecycle.py` (FR-ZONE-01..05): touched, 50 %, filled, invalidated (forward only, shared close time), distinct retests, expiry on the 101st candle or 4th retest, invalidation beats expiry. Applies to OBs and FVGs.
+- `step()` now follows all ten steps of DD 3.4 and also returns level changes and setup candidates; `SeriesState` (version 2, JSON codec) holds boxes, levels, zones, displacements, used OB candles and recent sweeps.
+- `context.py` `build_context` (trend, ATR, active zones of the context timeframes as of their last close; not ready before 14 candles), `multi.py` `run_multi` (merge by close time, ties to the higher timeframe), `setups.py` setup candidates on 15m/1H/4H (internal break + displacement within 3 candles + OB or FVG; patterns, sessions, spread, invalidation, opposing level, sweep, HTF context). Scoring stays in Increment 2.
+
+**Done: property tests and golden file (task 1.7)** — `engine/tests/data/synthetic_2000.json` (2,000 stored 5m candles and the reviewed `run_multi` output for 5m/15m/1H/4H/1D); step vs run with a JSON reload after every candle (5m, 15m, 1H); truncation for every n (500 × 15m); a random forming 4H candle for every n through `run_multi` changes no 1H output; two processes with different hash seeds and time zones give the golden hash.
+
+**Done: task 1.8 leftovers** — `test_metal_break_not_expected` and `test_sunday_open_expected` already existed (Day 2) and pass; new `test_fake_provider_same_events_as_recorded` (a recorded Twelve Data week replays to the same bars and engine events as the synthetic provider and the reviewed expectation). Live streaming not needed (Twelve Data is polled).
+
+**Result** `make check`: 387 passed, 2 skipped (DB files); `make test-db`: 15 passed; ruff, mypy (strict engine) and import-linter (9 contracts) green. Report `reports/TradeLens_Day3_Report.pdf`.
+
+**Review (ecc:python-reviewer)** 0 critical, 2 high, 6 medium, 6 low; no look-ahead, ID collision or nondeterminism found. Fixed test-first: two displacements sharing one OB candle lost the OB in the setup (HIGH); saved state had no version (HIGH: `v` = 2, `StateVersionError`, codec reports missing fields); merged kinds now restart a level's age; `run_multi` rejects unsorted series; breaks passed explicitly; no runtime `assert`. Left: typed sweep records, chronological transition order note, codec/serialiser unification, splitting `step()`.
+
+**Decisions / for the client**
+- After a BOS the protected low stays None until a new swing low forms (built as written; client to confirm).
+- EQH/EQL origin time = the newest member swing (keeps level IDs unique); the break candle does not count as a pre-confirmation touch; a new zone's first overlapping candle is retest 1; a series' first day/session box may be partial.
+- Golden file is 2.2 MB (one JSON line); regenerate only after a reviewed rule change (`engine/tests/golden.py --write`).
+
+**Tomorrow (Day 4: tasks 1.9–1.10, then the engine demo)** worker pipeline (close batches highest timeframe first, events + state in one transaction, gap/backfill, restart, `/healthz/full`), golden files from recorded history, benchmark, dev chart page, day-5 demo checklist.

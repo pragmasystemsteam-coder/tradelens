@@ -7,7 +7,7 @@ needs no special code. The trading day starts at 17:00 New York.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -58,7 +58,7 @@ def ny_week_key(dt: datetime) -> str:
 
 
 def sessions_of(
-    open_time: datetime, sessions: Mapping[str, tuple[str, str]] = DEFAULT_SESSIONS
+    open_time: datetime, sessions: Mapping[str, Sequence[str]] = DEFAULT_SESSIONS
 ) -> tuple[str, ...]:
     """Sessions a candle belongs to, by the New York time of its open.
 
