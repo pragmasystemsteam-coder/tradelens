@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TradeLens dev chart</title>
+<!-- Development only (DD 8.1 task 1.10). TradingView Lightweight Charts, pinned version. -->
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  :root { --bg: #ffffff; --fg: #1f2937; --muted: #6b7280; --line: #e5e7eb; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0f172a; --fg: #e5e7eb; --muted: #94a3b8; --line: #1e293b; } }
+  body { margin: 0; font: 14px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  header b { font-size: 15px; }
+  label { color: var(--muted); }
+  select, button { font: inherit; padding: 4px 8px; }
+  #chart { height: calc(100vh - 110px); min-height: 360px; margin: 0 16px; }
+  #legend { padding: 6px 16px; color: var(--muted); font-size: 12px; }
+  .note { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <b>TradeLens dev chart</b>
+  <label>Instrument <select id="instrument"></select></label>
+  <label>Timeframe <select id="timeframe">
+    <option>5m</option><option>15m</option><option selected>1h</option><option>4h</option><option>1d</option>
+  </select></label>
+  <label><input type="checkbox" id="showZones" checked> Zones</label>
+  <label><input type="checkbox" id="showLevels" checked> Liquidity</label>
+  <label><input type="checkbox" id="showSwings" checked> Swings</label>
+  <span class="note" id="status"></span>
+</header>
+<div id="chart"></div>
+<div id="legend">Markers: ▲▼ swing high/low · BOS / CHoCH (internal, external in capitals) · sweep · breakout.
+Boxes: green/red = bullish/bearish order block (solid) or FVG (dotted). Lines: liquidity (buy-side above, sell-side below).
+Development page only; not part of the customer app.</div>
+<script>
+const EMBEDDED = /*PAYLOAD*/null;
+const INSTRUMENTS = /*INSTRUMENTS*/["EUR_USD", "XAU_USD"];
+const DATA_URL = "/dev/chart/data";
+const UP = "#16a34a", DOWN = "#dc2626", BUY = "#2563eb", SELL = "#d97706";
+
+const sel = document.getElementById("instrument");
+for (const code of INSTRUMENTS) { const o = document.createElement("option"); o.textContent = code; sel.appendChild(o); }
+const chartEl = document.getElementById("chart");
+const dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+const chart = LightweightCharts.createChart(chartEl, {
+  autoSize: true,
+  layout: { background: { color: "transparent" }, textColor: dark ? "#e5e7eb" : "#1f2937" },
+  grid: { vertLines: { color: dark ? "#1e293b" : "#f1f5f9" }, horzLines: { color: dark ? "#1e293b" : "#f1f5f9" } },
+  timeScale: { timeVisible: true, secondsVisible: false },
+});
+let overlays = [];
+let candleSeries = null;
+
+function price(units, scale) { return units / Math.pow(10, scale); }
+
+function draw(p) {
+  for (const s of overlays) chart.removeSeries(s);
+  overlays = [];
+  if (candleSeries) chart.removeSeries(candleSeries);
+  const scale = p.price_scale;
+  const fmt = { type: "price", precision: scale, minMove: 1 / Math.pow(10, scale) };
+  candleSeries = chart.addCandlestickSeries({ upColor: UP, downColor: DOWN, wickUpColor: UP, wickDownColor: DOWN, borderVisible: false, priceFormat: fmt });
+  candleSeries.setData(p.candles.map(c => ({ time: c.time, open: price(c.open, scale), high: price(c.high, scale), low: price(c.low, scale), close: price(c.close, scale) })));
+  const showSwings = document.getElementById("showSwings").checked;
+  const markers = [];
+  for (const m of p.markers) {
+    const bull = m.direction === "bull";
+    if (m.kind === "swing_high" || m.kind === "swing_low") {
+      if (!showSwings) continue;
+      const high = m.kind === "swing_high";
+      markers.push({ time: m.time, position: high ? "aboveBar" : "belowBar", color: m.structure === "external" ? "#7c3aed" : "#64748b", shape: high ? "arrowDown" : "arrowUp", size: m.structure === "external" ? 1 : 0.5 });
+    } else {
+      const label = m.kind === "bos" || m.kind === "choch" ? (m.structure === "external" ? m.kind.toUpperCase() : (m.kind === "bos" ? "BOS" : "CHoCH")) : m.kind;
+      markers.push({ time: m.time, position: bull ? "belowBar" : "aboveBar", color: bull ? UP : DOWN, shape: "circle", size: 0.5, text: label });
+    }
+  }
+  markers.sort((a, b) => a.time - b.time);
+  candleSeries.setMarkers(markers);
+  if (document.getElementById("showZones").checked) {
+    for (const z of p.zones.slice(-60)) {
+      const color = z.direction === "bull" ? UP : DOWN;
+      const style = z.kind === "ob" ? LightweightCharts.LineStyle.Solid : LightweightCharts.LineStyle.Dotted;
+      for (const edge of [z.high, z.low]) {
+        const s = chart.addLineSeries({ color, lineWidth: 1, lineStyle: style, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, priceFormat: fmt });
+        const pts = z.start === z.end ? [{ time: z.start, value: price(edge, scale) }] : [{ time: z.start, value: price(edge, scale) }, { time: z.end, value: price(edge, scale) }];
+        s.setData(pts); overlays.push(s);
+      }
+    }
+  }
+  if (document.getElementById("showLevels").checked) {
+    for (const lv of p.levels.slice(-40)) {
+      const s = chart.addLineSeries({ color: lv.side === "buy" ? BUY : SELL, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, priceFormat: fmt });
+      const pts = lv.start === lv.end ? [{ time: lv.start, value: price(lv.price, scale) }] : [{ time: lv.start, value: price(lv.price, scale) }, { time: lv.end, value: price(lv.price, scale) }];
+      s.setData(pts); overlays.push(s);
+    }
+  }
+  // Fit after layout: with autoSize the first frame can still have the initial width.
+  requestAnimationFrame(() => chart.timeScale().fitContent());
+  document.getElementById("status").textContent = `${p.instrument} ${p.timeframe}: ${p.candles.length} candles, ${p.markers.length} markers, ${p.zones.length} zones, ${p.levels.length} levels`;
+}
+
+let current = null;
+async function load() {
+  const inst = sel.value, tf = document.getElementById("timeframe").value;
+  if (EMBEDDED) { current = EMBEDDED[inst] && EMBEDDED[inst][tf]; if (current) draw(current); else document.getElementById("status").textContent = "no data"; return; }
+  document.getElementById("status").textContent = "loading…";
+  const r = await fetch(`${DATA_URL}?instrument=${encodeURIComponent(inst)}&timeframe=${encodeURIComponent(tf)}`);
+  if (!r.ok) { document.getElementById("status").textContent = `error ${r.status}`; return; }
+  current = await r.json(); draw(current);
+}
+for (const id of ["instrument", "timeframe"]) document.getElementById(id).addEventListener("change", load);
+for (const id of ["showZones", "showLevels", "showSwings"]) document.getElementById(id).addEventListener("change", () => current && draw(current));
+load();
+</script>
+</body>
+</html>

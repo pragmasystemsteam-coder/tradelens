@@ -83,3 +83,27 @@ Short entry per day: done, problems, tomorrow. Plans live in `docs/superpowers/p
 - Golden file is 2.2 MB (one JSON line); regenerate only after a reviewed rule change (`engine/tests/golden.py --write`).
 
 **Tomorrow (Day 4: tasks 1.9–1.10, then the engine demo)** worker pipeline (close batches highest timeframe first, events + state in one transaction, gap/backfill, restart, `/healthz/full`), golden files from recorded history, benchmark, dev chart page, day-5 demo checklist.
+
+## Day 4 — 10 Nov 2026 (tasks 1.9, 1.10, engine demo, 2.1, 2.2; original design days 5 and 6)
+
+**Done (all test-first: failing run seen, then passing)**
+- Engine: `multi.step_batch` steps a close batch from saved states, highest timeframe first (`run_multi` is now one batch from empty); `SetupCandidate` gained `zone_low/zone_high/break_level/displacement_candles` (golden `synthetic_2000.json` regenerated: only those 4 fields on 40 candidates changed).
+- 1.9 worker pipeline: `analysis.CloseProcessor` (delayed series never stepped; a missing state rebuilds every timeframe from all stored candles, so no look-ahead), `SqlAnalysisStore` (events, zones, transitions, levels and `series_state` in one transaction), `worker/jobs/close.py` (ingest → process → publish every 5-minute boundary + 2 s, timed), `chart.updated` on `updates:{instrument}`, `series.delayed/resumed` on `data` (previous status read from `series_status`, so it survives restarts), prices (`price:{instrument}` snapshot, `prices:{instrument}` throttled 500 ms, stale flag, reconnect; CR-004: each new 5m close is a tick), heartbeat 5 s, `GET /healthz/full` (worker heartbeat, last ingest check, price stream).
+- 1.10: two weeks of real EUR/USD and XAU/USD 5m history recorded from Twelve Data (2 credits; 26 Oct–6 Nov 2026, includes the US DST change) in `engine/tests/golden/`; `test_golden_events` plus an independent rule review of every swing, BOS/CHoCH, breakout and sweep against its candles; `scripts/benchmark.py`; dev-only Lightweight Charts page (`/dev/chart`, mounted only when `APP_ENV=development`) and `scripts/dev_chart.py` (self-contained page from the recordings).
+- Engine demo checklist: [docs/demo/INCREMENT1_DEMO.md](demo/INCREMENT1_DEMO.md).
+- 2.1: migration 0002 (users, sessions, email_tokens, plans, plan_prices, country_currency, founder_slots, subscriptions without the founder FK, setups + `setups_guard`, append-only `setup_revisions`, watchlists, watchlist_items; FK `rule_versions.created_by → users`); plan loader (`billing`, closed limit-key list, one default, at most one trial); `load-plans` (also part of `seed`) and `create-user EMAIL ROLE PLAN` (Argon2id; manual subscription; refuses unless `APP_ENV` is development or staging). `argon2-cffi` added.
+- 2.2 scoring (`tradelens_engine/scoring/`): Q (6 factors) and C (4 factors), combined half up from `rule_versions.weights`, high quality at 60, counter-trend badge (hide option), batch-end `reevaluate` (LTF confirmation +20 once, invalidated/expired status, `as_of` only), template explanations (met, then missed).
+- Benchmark on this PC (AD-03): 55 series, median close 0.18 s in memory, **1.33 s median / 1.73 s max with PostgreSQL** (limit 5 s, so one worker stays). Must be re-run on the client's ARM VM.
+
+**Result** ruff + format clean; mypy engine 30 / backend 68 files clean; import-linter 8 + 1 kept; `pytest` **480 passed, 4 skipped**; `scripts/test_db.py` **31 passed**; compose config valid; no file holds the Twelve Data key.
+
+**Review** ecc:python-reviewer: 0 critical, 1 high, 7 medium, 4 low. Fixed test-first: the high one (the candle price source re-sent the same close every 5 s, so a dead ingest never looked stale; now only new closes are ticks, staleness = one candle + grace, the poll keeps the stream marker); Redis I/O moved out of the price lock; price and stale-watch threads can no longer die silently; rebuilds use all stored candles; `create-user` fails closed on an unset or unknown `APP_ENV`.
+
+**Problems / open**
+- Twelve Data returns mid OHLC only (no bid/ask), so spreads cannot be measured: `normal_spread` stays a flagged placeholder (client question).
+- Liquidity levels: the engine also removes a superseded period kind from a level, so migration 0002 lets `kinds` change while the level is active (not only grow).
+- Not fixed from the review (logged): retest count of a zone that ends in the same batch, cross-timeframe watermark if a derived candle were stored a pass late (ingest derives in the same pass today), `/dev/chart` mounts when `APP_ENV` is unset (defaults to development), plan rows removed from `plans.json` are not deactivated, Lightweight Charts script has no SRI hash (dev page only).
+- Scoring is in the engine; writing setups/revisions from the worker is task 2.3.
+- Client questions from Day 3 stay open (protected low after BOS; touch on the break candle; first zone entry = retest 1).
+
+**Tomorrow (Day 5: tasks 2.3–2.5)** worker scoring + setups/revisions + scanner cache and live messages; API foundation (sessions, CSRF, rate limits, entitlements); scanner and market endpoints.

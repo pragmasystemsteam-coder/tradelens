@@ -1,5 +1,5 @@
 {
-  "_comment": "Detailed Design 6.4. Commodity scales are to be verified against OANDA (make verify-instruments); normal_spread values are placeholders replaced on day 4 with measured medians. provider_symbols.twelvedata is the Twelve Data symbol (CR-004); WTI/USD and XBR/USD are to be confirmed with make verify-instruments LIVE=1.",
+  "_comment": "Detailed Design 6.4. Commodity scales are to be verified against OANDA (make verify-instruments); normal_spread values are PLACEHOLDERS (developer estimates): Twelve Data /time_series returns mid OHLC only, no bid/ask (checked 10 Nov 2026 on the golden recordings), so no spread can be measured; replace them with the median of ask_c - bid_c once OANDA (or another bid/ask source) is connected. provider_symbols.twelvedata is the Twelve Data symbol (CR-004); WTI/USD and XBR/USD are to be confirmed with make verify-instruments LIVE=1.",
   "instruments": [
     {
       "code": "EUR_USD",

@@ -1,7 +1,8 @@
 """``make seed``: load config/*.json into the database, idempotently (Detailed Design 2.7, 6).
 
 Seeds 2 trading calendars, 11 instruments, 55 series_status rows, rule version r1.0 and its
-4 presets. Plans and prices (config/plans.json) are seeded with migration 0002 (DD-8).
+4 presets, and (since migration 0002) the plans, prices, country currencies and founder caps of
+config/plans.json (the same upsert as ``load-plans``).
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from sqlalchemy import Connection, create_engine
 from sqlalchemy.exc import SQLAlchemyError
 
 from tradelens.modules.analysis.public import RuleRows, build_rule_rows, save_rule_rows
+from tradelens.modules.billing.public import PlanRows, build_plan_rows, save_plan_rows
 from tradelens.modules.market_data.public import (
     ReferenceRows,
     build_reference_rows,
@@ -34,6 +36,7 @@ class SeedRows:
 
     reference: ReferenceRows
     rules: RuleRows
+    plans: PlanRows | None = None
 
     @property
     def calendars(self) -> tuple[Row, ...]:
@@ -82,7 +85,12 @@ def load_seed_rows(config_dir: Path) -> SeedRows:
     )
     rule_files = sorted((config_dir / "rules").glob("*.json"))
     rules = build_rule_rows([_read_json(path) for path in rule_files])
-    return SeedRows(reference=reference, rules=rules)
+    plans_file = config_dir / "plans.json"
+    plans = None
+    if plans_file.exists():
+        mode = os.environ.get("RAZORPAY_MODE", "test") or "test"
+        plans = build_plan_rows(_read_json(plans_file), mode=mode)
+    return SeedRows(reference=reference, rules=rules, plans=plans)
 
 
 def write_seed_rows(conn: Connection, rows: SeedRows) -> None:
@@ -94,6 +102,8 @@ def write_seed_rows(conn: Connection, rows: SeedRows) -> None:
     """
     save_reference_rows(conn, rows.reference)
     save_rule_rows(conn, rows.rules)
+    if rows.plans is not None:
+        save_plan_rows(conn, rows.plans)
 
 
 def seed(conn: Connection, config_dir: Path) -> None:

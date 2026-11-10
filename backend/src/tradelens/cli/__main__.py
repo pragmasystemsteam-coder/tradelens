@@ -1,19 +1,22 @@
-"""Dispatch ``python -m tradelens.cli doctor|seed|verify-instruments ...``."""
+"""Dispatch ``python -m tradelens.cli doctor|seed|load-plans|create-user|verify-instruments``."""
 
 from __future__ import annotations
 
 import sys
 
-from tradelens.cli import doctor, seed, verify_instruments
+from tradelens.cli import create_user, doctor, load_plans, seed, verify_instruments
 
 COMMANDS = {
     "doctor": doctor.main,
     "seed": seed.main,
+    "load-plans": load_plans.main,
+    "create-user": create_user.main,
     "verify-instruments": verify_instruments.main,
 }
 USAGE = (
     "usage: python -m tradelens.cli"
-    " {doctor ENV_FILE | seed CONFIG_DIR | verify-instruments CONFIG_DIR [--live]}\n"
+    " {doctor ENV_FILE | seed CONFIG_DIR | load-plans CONFIG_DIR | create-user EMAIL ROLE PLAN"
+    " | verify-instruments CONFIG_DIR [--live]}\n"
 )
 EXIT_USAGE = 2
 

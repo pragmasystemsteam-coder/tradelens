@@ -57,6 +57,10 @@ UNFILLED = text(
     " AND filled_at IS NULL"
     " AND (CAST(:since AS timestamptz) IS NULL OR detected_at >= :since) ORDER BY gap_from"
 )
+LATEST_CLOSES = text(
+    "SELECT DISTINCT ON (instrument) instrument, open_time, c, bid_c, ask_c FROM candles"
+    " WHERE timeframe = :tf ORDER BY instrument, open_time DESC"
+)
 FILL_GAP = text(
     "UPDATE data_gaps SET filled_at = :now WHERE instrument = :i AND timeframe = :tf"
     " AND gap_from = :gf AND filled_at IS NULL"
@@ -135,3 +139,17 @@ class SqlCandleStore:
     def fill_gap(self, instrument: str, timeframe: str, gap_from: datetime, now: datetime) -> None:
         """Mark a gap filled."""
         self._conn.execute(FILL_GAP, {"i": instrument, "tf": timeframe, "gf": gap_from, "now": now})
+
+
+def latest_closes(conn: Connection, timeframe: str = "5m") -> list[StoredCandle]:
+    """The newest stored candle of every instrument (price source without a stream, CR-004).
+
+    Only ``instrument``, ``open_time`` and the closes are filled; the other prices repeat ``c``.
+    """
+    rows = conn.execute(LATEST_CLOSES, {"tf": timeframe})
+    out = []
+    for r in rows:
+        bid, ask = r.bid_c, r.ask_c
+        out.append(StoredCandle(r.instrument, timeframe, r.open_time, r.c, r.c, r.c, r.c,
+                                bid, bid, bid, bid, ask, ask, ask, ask, "db"))  # fmt: skip
+    return out

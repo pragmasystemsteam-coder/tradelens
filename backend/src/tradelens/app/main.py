@@ -9,12 +9,13 @@ from fastapi import FastAPI
 
 from tradelens.app.bootstrap import wire
 from tradelens.app.middleware import RequestIdMiddleware
-from tradelens.app.routers import ROUTERS
+from tradelens.app.routers import DEV_ROUTERS, ROUTERS
 from tradelens.core.config import AppConfig
 
 API_TITLE = "TradeLens API"
 API_VERSION = "0.1.0"
 PRODUCTION = "production"
+DEVELOPMENT = "development"
 
 
 def create_app(config: AppConfig | None = None) -> FastAPI:
@@ -43,6 +44,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     )
     for router in ROUTERS:
         app.include_router(router)
+    if cfg.app_env == DEVELOPMENT:
+        for router in DEV_ROUTERS:
+            app.include_router(router)
     app.add_middleware(RequestIdMiddleware)
     wire(app, cfg)
     return app

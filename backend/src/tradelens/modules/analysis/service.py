@@ -162,3 +162,37 @@ def _check_no_drift(conn: Connection, rows: RuleRows) -> None:
             raise RuleConfigError(
                 f"{preset['rule_version']}: preset {preset['code']} differs from the stored preset"
             )
+
+
+def official_settings(rule_doc: Mapping[str, Any]) -> Settings:
+    """The official (scanner) settings of a rule version file (config/rules/*.json).
+
+    Raises:
+        RuleConfigError: If the settings are not allowed.
+    """
+    return _settings(rule_doc.get("version", "?"), rule_doc["user"], rule_doc["constants"])
+
+
+@dataclass(frozen=True, slots=True)
+class ActiveRule:
+    """The active rule version as stored (settings validated by the engine)."""
+
+    version: str
+    settings: Settings
+    weights: Mapping[str, Any]
+
+
+def load_active_rule(conn: Connection) -> ActiveRule:
+    """Read the active rule version (one is active at a time; the seed activates r1.0).
+
+    Raises:
+        RuleConfigError: If no version is active or its stored settings are invalid.
+    """
+    row = repository.fetch_active_rule(conn)
+    if row is None:
+        raise RuleConfigError("no active rule version; run make seed")
+    version, settings, weights = row
+    try:
+        return ActiveRule(version, Settings.from_json(settings), weights)
+    except SettingsError as exc:
+        raise RuleConfigError(f"{version}: stored settings are invalid: {exc}") from exc
