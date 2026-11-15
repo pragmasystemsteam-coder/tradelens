@@ -44,3 +44,7 @@ class SetupCandidate:
     settings_hash: str
     rule_version: str
     context: HigherTfContext | None
+    zone_low: int  # primary zone (OB, else FVG) bounds: room to liquidity uses the near edge
+    zone_high: int
+    break_level: int  # the broken swing price (explanations)
+    displacement_candles: int

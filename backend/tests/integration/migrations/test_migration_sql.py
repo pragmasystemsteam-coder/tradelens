@@ -52,7 +52,9 @@ def test_migration_offline_sql_has_tables_and_triggers(repo, monkeypatch):
         assert f"CREATE TRIGGER {trigger}" in sql, trigger
     assert "CREATE EXTENSION IF NOT EXISTS pgcrypto" in sql
     assert "CREATE EXTENSION IF NOT EXISTS citext" in sql
-    assert "CREATE TABLE setups" not in sql  # Increment 2 (DD-8)
+    for table in ("users", "plans", "subscriptions", "setups", "setup_revisions", "watchlists"):
+        assert f"CREATE TABLE {table} (" in sql, table  # migration 0002 (Increment 2, DD-8)
+    assert "CREATE TABLE setups" not in offline_sql(repo, monkeypatch, "upgrade", "0001")
     assert "CREATE UNIQUE INDEX rule_versions_one_active" in sql
 
 

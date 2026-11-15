@@ -64,3 +64,12 @@ def fetch_preset_hashes(conn: Connection, versions: Sequence[str]) -> dict[tuple
 def activate_if_none_active(conn: Connection, version: str) -> None:
     """Mark ``version`` active unless another version already is (one active at a time)."""
     conn.execute(ACTIVATE_IF_NONE, {"version": version})
+
+
+SELECT_ACTIVE = text("SELECT version, settings, weights FROM rule_versions WHERE is_active")
+
+
+def fetch_active_rule(conn: Connection) -> tuple[str, dict[str, Any], dict[str, Any]] | None:
+    """``(version, settings, weights)`` of the active rule version, or None."""
+    row = conn.execute(SELECT_ACTIVE).first()
+    return None if row is None else (row.version, dict(row.settings), dict(row.weights))

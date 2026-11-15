@@ -241,7 +241,9 @@ def _setup(b: _Bar, brk: Event, inp: _SetupInputs) -> SetupCandidate | None:
         invalidation=pz.low if direction == "bull" else pz.high,
         opposing_level=_opposing_level(inp.levels, direction, pz),
         origin_time=pz.origin_time, confirm_time=c.close_time, settings_hash=k.settings_hash,
-        rule_version=k.rule_version, context=inp.htf,
+        rule_version=k.rule_version, context=inp.htf, zone_low=pz.low, zone_high=pz.high,
+        break_level=brk.level if brk.level is not None else 0,
+        displacement_candles=rec.disp.candles,
     )  # fmt: skip
 
 

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Protocol
 
-HEARTBEAT_KEY = "worker:heartbeat"
+from tradelens.core.keys import HEARTBEAT_KEY
+
+__all__ = ["HEARTBEAT_KEY", "HeartbeatStore", "beat"]
 
 
 class HeartbeatStore(Protocol):

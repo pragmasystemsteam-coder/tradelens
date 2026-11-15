@@ -78,6 +78,7 @@ class InstrumentReport:
     stored: dict[str, int] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
     halted: bool = False  # a credit or rate limit stopped this pass: no further calls
+    previous_status: str | None = None  # 5m status before this pass (None: never checked)
 
 
 class CandleStore(Protocol):
@@ -270,6 +271,8 @@ class IngestService:
         self, store: CandleStore, code: str, now: datetime, rep: InstrumentReport
     ) -> None:
         delayed = rep.status == DELAYED
+        before = store.get_status(code, LIVE_TIMEFRAME)
+        rep.previous_status = None if before is None else before.status
         for tf in ALL_TIMEFRAMES:
             previous = store.get_status(code, tf)
             since = None

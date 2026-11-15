@@ -5,6 +5,27 @@ versions follow the increments (0.1 = Increment 1, 0.2 = Increment 2, 1.0 = Rele
 
 ## [Unreleased]
 
+### Added (Day 4, 10 Nov 2026)
+- Worker candle-close pipeline (task 1.9): ingest, engine `step_batch` per instrument (highest timeframe first),
+  events and state in one transaction, delayed series never stepped, restart from `series_state`, Redis
+  `chart.updated` / `series.delayed` / `series.resumed`, price snapshot and throttled channel with stale flag and
+  reconnect, `GET /healthz/full`.
+- Golden events from two weeks of real Twelve Data EUR/USD and XAU/USD history with an independent rule review;
+  `scripts/benchmark.py` (AD-03), `scripts/record_golden.py`, development-only Lightweight Charts page and
+  `scripts/dev_chart.py`; engine demo checklist `docs/demo/INCREMENT1_DEMO.md` (task 1.10).
+- Migration 0002: accounts, plans, prices, country currencies, founder slots, subscriptions, setups and
+  append-only setup revisions, watchlists; plan loader with closed limit keys; `load-plans`, `create-user`
+  (Argon2id, development/staging only) (task 2.1).
+- Engine scoring: Q and C factors, combined rank from `rule_versions.weights`, counter-trend badge, batch-end
+  re-evaluation and template explanations (task 2.2).
+
+### Changed (Day 4)
+- `SetupCandidate` carries the primary zone bounds, the broken level and the displacement length;
+  `engine/tests/data/synthetic_2000.json` regenerated for these fields only (no rule change).
+- `liquidity_levels` kinds may change while a level is active (a kind joins or a superseded one leaves).
+- `seed` also loads `config/plans.json`; `normal_spread` values are flagged as placeholders (no bid/ask from
+  Twelve Data).
+
 ### Added (Day 3, 8 Nov 2026)
 - Engine, test-first: liquidity levels (swing, PDH/PDL, PWH/PWL, Asian/London/NY sessions), EQH/EQL with ATR
   tolerance, same-candle sweeps and breakouts; displacement; order blocks (promoted on a same-direction internal

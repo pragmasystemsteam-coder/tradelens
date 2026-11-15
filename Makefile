@@ -21,11 +21,11 @@ ALEMBIC := $(PY) -m alembic -c backend/alembic.ini
 
 .PHONY: help venv install test test-engine test-api lint-imports lint format typecheck check \
         migrate-sql doctor \
-        build up down logs health psql migrate seed init
+        build up down logs health psql migrate seed load-plans create-user init
 
 help:
 	@echo "Local:     venv install test test-engine test-api lint lint-imports typecheck check migrate-sql doctor verify-instruments web-check"
-	@echo "Container: init build up down logs health psql migrate seed test-db"
+	@echo "Container: init build up down logs health psql migrate seed load-plans create-user test-db"
 
 venv:
 	$(PY_BOOT) -m venv .venv
@@ -111,6 +111,15 @@ migrate:
 
 seed:
 	$(COMPOSE) run --rm --no-deps -e DATABASE_MIGRATION_URL=$(DATABASE_MIGRATION_URL) api python -m tradelens.cli seed /app/config
+
+# Upsert config/plans.json (plans, prices, country currencies, founder caps); also part of seed.
+load-plans:
+	$(COMPOSE) run --rm --no-deps -e DATABASE_MIGRATION_URL=$(DATABASE_MIGRATION_URL) -e RAZORPAY_MODE=$(RAZORPAY_MODE) api python -m tradelens.cli load-plans /app/config
+
+# Demo or staff user with a manual plan: make create-user EMAIL=a@b.c ROLE=customer PLAN=pro_monthly
+# (refuses when APP_ENV=production; prints a generated password once unless CREATE_USER_PASSWORD is set).
+create-user:
+	$(COMPOSE) run --rm --no-deps -e DATABASE_MIGRATION_URL=$(DATABASE_MIGRATION_URL) -e APP_ENV=$(APP_ENV) -e CREATE_USER_PASSWORD api python -m tradelens.cli create-user $(EMAIL) $(ROLE) $(PLAN)
 
 init: doctor build
 	$(COMPOSE) up -d postgres redis
