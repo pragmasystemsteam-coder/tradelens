@@ -86,3 +86,27 @@ def fetch_plan_default(conn: Connection, code: str) -> bool | None:
 def insert_manual_subscription(conn: Connection, user_id: str, plan_code: str) -> str:
     """Insert an active ``manual`` subscription and return its ID."""
     return str(conn.execute(INSERT_MANUAL, {"user_id": user_id, "plan_code": plan_code}).scalar())
+
+
+SELECT_PLANS = text(
+    "SELECT code, name, is_paid, is_default, tier_rank, trial_days, limits, is_public, active"
+    " FROM plans ORDER BY sort_order, code"
+)
+# The newest subscription that may still grant a plan; dates are checked by the service.
+SELECT_LIVE_SUBSCRIPTION = text(
+    "SELECT plan_code, status, trial_ends_at, current_period_end, grace_until,"
+    " cancel_at_period_end, pending_plan_code FROM subscriptions WHERE user_id = :user_id"
+    " AND status IN ('trialing', 'active', 'grace', 'cancelled')"
+    " ORDER BY created_at DESC, id LIMIT 1"
+)
+
+
+def fetch_plans(conn: Connection) -> list[dict[str, Any]]:
+    """Every plan row (active and inactive)."""
+    return [dict(r) for r in conn.execute(SELECT_PLANS).mappings()]
+
+
+def fetch_live_subscription(conn: Connection, user_id: str) -> dict[str, Any] | None:
+    """The newest trialing, active, grace or cancelled subscription of a user, if any."""
+    row = conn.execute(SELECT_LIVE_SUBSCRIPTION, {"user_id": user_id}).mappings().first()
+    return None if row is None else dict(row)

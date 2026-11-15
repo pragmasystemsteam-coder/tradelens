@@ -32,6 +32,12 @@ LOAD = text(
     " WHERE instrument = :i AND timeframe = :tf"
     " AND (CAST(:since AS timestamptz) IS NULL OR open_time >= :since) ORDER BY open_time"
 )
+LOAD_LAST = text(
+    "SELECT * FROM (SELECT instrument, timeframe, open_time, o, h, l, c, bid_o, bid_h, bid_l,"
+    " bid_c, ask_o, ask_h, ask_l, ask_c, tick_volume, source FROM candles"
+    " WHERE instrument = :i AND timeframe = :tf ORDER BY open_time DESC LIMIT :n) newest"
+    " ORDER BY open_time"
+)
 GET_STATUS = text(
     "SELECT status, last_candle_time, delayed_since, last_checked_at FROM series_status"
     " WHERE instrument = :i AND timeframe = :tf"
@@ -153,3 +159,11 @@ def latest_closes(conn: Connection, timeframe: str = "5m") -> list[StoredCandle]
         out.append(StoredCandle(r.instrument, timeframe, r.open_time, r.c, r.c, r.c, r.c,
                                 bid, bid, bid, bid, ask, ask, ask, ask, "db"))  # fmt: skip
     return out
+
+
+def load_last_candles(
+    conn: Connection, instrument: str, timeframe: str, count: int
+) -> list[StoredCandle]:
+    """The newest ``count`` stored candles of a series, oldest first (charts, task 2.6)."""
+    rows = conn.execute(LOAD_LAST, {"i": instrument, "tf": timeframe, "n": count})
+    return [StoredCandle(**row._mapping) for row in rows]

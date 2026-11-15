@@ -11,11 +11,13 @@ MAX_CACHED_ENGINES = 4
 
 
 @lru_cache(maxsize=MAX_CACHED_ENGINES)
-def get_engine(url: str) -> Engine:
+def get_engine(url: str, pool_size: int = 5, max_overflow: int = 10) -> Engine:
     """Return a pooled engine for ``url``, created once per process.
 
     Args:
         url: SQLAlchemy database URL.
+        pool_size: Connections kept open.
+        max_overflow: Extra connections allowed under load.
 
     Returns:
         The shared engine.
@@ -26,5 +28,7 @@ def get_engine(url: str) -> Engine:
     return create_engine(
         url,
         pool_pre_ping=True,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
         connect_args={"connect_timeout": CONNECT_TIMEOUT_SECONDS},
     )

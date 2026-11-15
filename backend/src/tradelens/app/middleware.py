@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from uuid import uuid4
 
 from starlette.datastructures import MutableHeaders
+from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from tradelens.app.exception_handlers import internal_error_body
 from tradelens.core.logging import request_id_var
+
+log = logging.getLogger("tradelens.app.middleware")
 
 REQUEST_ID_HEADER = "X-Request-ID"
 SAFE_REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
@@ -47,13 +52,24 @@ class RequestIdMiddleware:
         raw = headers.get(REQUEST_ID_HEADER.lower().encode("latin-1"))
         request_id = pick_request_id(raw.decode("latin-1") if raw else None)
 
+        started = False
+
         async def send_with_id(message: Message) -> None:
+            nonlocal started
             if message["type"] == "http.response.start":
+                started = True
                 MutableHeaders(scope=message).append(REQUEST_ID_HEADER, request_id)
             await send(message)
 
         token = request_id_var.set(request_id)
         try:
             await self.app(scope, receive, send_with_id)
+        except Exception:
+            log.exception("unhandled error")
+            if started:
+                raise
+            # DD 4.1: 500 internal_error with the request ID; the exception text is never sent.
+            response = JSONResponse(internal_error_body(), status_code=500)
+            await response(scope, receive, send_with_id)
         finally:
             request_id_var.reset(token)

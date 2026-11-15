@@ -70,7 +70,8 @@ class FakeSource:
 
 
 def dev_client(env="development"):
-    app = create_app(AppConfig.from_env({"APP_ENV": env}))
+    secrets = {"SESSION_SECRET": "s" * 32, "CSRF_SECRET": "c" * 32}
+    app = create_app(AppConfig.from_env({"APP_ENV": env, **secrets}))
     app.dependency_overrides[get_chart_source] = lambda: FakeSource()
     return TestClient(app)
 
@@ -88,7 +89,8 @@ def test_dev_chart_page_and_data_in_development():
 def test_dev_chart_rejects_unknown_timeframe():
     client = dev_client()
     bad = client.get("/dev/chart/data", params={"instrument": "EUR_USD", "timeframe": "2h"})
-    assert bad.status_code == 422
+    assert bad.status_code == 400  # DD 4.1: validation_error is 400
+    assert bad.json()["error"]["code"] == "validation_error"
 
 
 def test_dev_chart_absent_in_production():

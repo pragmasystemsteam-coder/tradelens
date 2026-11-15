@@ -51,13 +51,18 @@ www.{$SITE_HOST} {
 	handle /api/admin/* {
 		respond 404
 	}
+	# X-Forwarded-For is overwritten with the resolved client IP (CF-Connecting-IP from a
+	# Cloudflare peer, else the peer), so a client cannot pick its own rate-limit bucket.
 	handle /api/v1/stream* {
 		reverse_proxy api:8000 {
 			flush_interval -1
+			header_up X-Forwarded-For {client_ip}
 		}
 	}
 	handle /api/* {
-		reverse_proxy api:8000
+		reverse_proxy api:8000 {
+			header_up X-Forwarded-For {client_ip}
+		}
 	}
 	handle /healthz* {
 		reverse_proxy api:8000
@@ -71,7 +76,9 @@ www.{$SITE_HOST} {
 	import common
 	encode zstd gzip
 	handle /api/admin/* {
-		reverse_proxy api:8000
+		reverse_proxy api:8000 {
+			header_up X-Forwarded-For {client_ip}
+		}
 	}
 	handle /api/* {
 		respond 404

@@ -3,8 +3,25 @@
 from tradelens.modules.accounts.service import (
     ROLES,
     AccountError,
+    LoginResult,
+    SessionRules,
     create_account,
+    login,
+    logout,
+    public_user,
+    resolve_session,
     validate_account,
 )
 
-__all__ = ["ROLES", "AccountError", "create_account", "validate_account"]
+__all__ = [
+    "ROLES",
+    "AccountError",
+    "LoginResult",
+    "SessionRules",
+    "create_account",
+    "login",
+    "logout",
+    "public_user",
+    "resolve_session",
+    "validate_account",
+]

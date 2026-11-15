@@ -9,12 +9,17 @@ task 2.4). ``null`` for a count means unlimited.
 
 from __future__ import annotations
 
+import contextlib
+import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
+from redis.exceptions import RedisError
 from sqlalchemy import Connection
 
+from tradelens.core.limits import Limits, best_of, with_defaults
 from tradelens.modules.billing import repository
 
 Row = dict[str, Any]
@@ -241,3 +246,111 @@ def create_manual_subscription(conn: Connection, user_id: str, plan_code: str) -
         The subscription ID.
     """
     return repository.insert_manual_subscription(conn, user_id, plan_code)
+
+
+# ---------------------------------------------------------------- entitlements (DD 4.3, task 2.4)
+ENT_TTL_SECONDS = 60
+
+
+def _iso(t: datetime | None) -> str | None:
+    return None if t is None else t.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _grants(sub: Mapping[str, Any] | None, now: datetime) -> str | None:
+    """``paid``, ``trial`` or None: what a subscription row grants at ``now`` (DD 4.3)."""
+    if sub is None:
+        return None
+    status = sub["status"]
+    if status == "active":
+        return "paid"
+    if status == "grace" and sub.get("grace_until") is not None and now < sub["grace_until"]:
+        return "paid"
+    end = sub.get("current_period_end")
+    if status == "cancelled" and end is not None and now < end:
+        return "paid"
+    trial_end = sub.get("trial_ends_at")
+    if status == "trialing" and trial_end is not None and now < trial_end:
+        return "trial"
+    return None
+
+
+def resolve_limits(
+    plans: Sequence[Mapping[str, Any]], sub: Mapping[str, Any] | None, now: datetime
+) -> Limits:
+    """A user's effective limits from plan rows and their newest subscription (DD 4.3).
+
+    A live paid subscription gives its plan's limits; else a running trial gives the trial
+    plan's (the plan with ``trial_days > 0``); else the default plan. Plan codes are only
+    looked up, never compared with literals (FR-SUB-01).
+
+    Args:
+        plans: Plan rows (``code``, ``name``, ``is_default``, ``trial_days``, ``limits``,
+            ``active``).
+        sub: The newest subscription that may grant a plan, or None.
+        now: Current time (UTC).
+
+    Returns:
+        The limits, with ``best`` taken from every active plan.
+
+    Raises:
+        PlanConfigError: When no default plan exists.
+    """
+    by_code = {p["code"]: p for p in plans}
+    default = next((p for p in plans if p["is_default"]), None)
+    if default is None:
+        raise PlanConfigError("no default plan is loaded (make load-plans)")
+    grant = _grants(sub, now)
+    plan = default
+    if grant == "paid" and sub is not None and sub["plan_code"] in by_code:
+        plan = by_code[sub["plan_code"]]
+    elif grant == "trial":
+        plan = next((p for p in plans if p["trial_days"] > 0), default)
+    best = best_of(p["limits"] for p in plans if p.get("active", True))
+    return Limits(with_defaults(plan["limits"]), best, plan["code"], plan["name"])
+
+
+def entitlements(conn: Connection, user_id: str, now: datetime) -> Limits:
+    """Effective limits of ``user_id`` read from the database (uncached)."""
+    return resolve_limits(repository.fetch_plans(conn),
+                          repository.fetch_live_subscription(conn, user_id), now)  # fmt: skip
+
+
+def cached_entitlements(
+    cache: Any,  # noqa: ANN401 - redis.Redis
+    user_id: str,
+    load: Callable[[], Limits],
+) -> Limits:
+    """Limits from ``ent:{user_id}`` (60 s), else ``load()`` and store them.
+
+    Redis errors fall back to ``load()``: gating never depends on the cache being up.
+    """
+    key = f"ent:{user_id}"
+    try:
+        raw = cache.get(key)
+    except (RedisError, OSError):
+        raw = None
+    if raw:
+        return Limits.from_cache(json.loads(raw))
+    limits = load()
+    with contextlib.suppress(RedisError, OSError):
+        cache.set(key, json.dumps(limits.cache_json()), ex=ENT_TTL_SECONDS)
+    return limits
+
+
+def invalidate_entitlements(cache: Any, user_id: str) -> None:  # noqa: ANN401
+    """Drop the cached limits after any plan, trial or subscription change (DD 4.1)."""
+    cache.delete(f"ent:{user_id}")
+
+
+def account_summary(conn: Connection, user_id: str, limits: Limits) -> dict[str, Any]:
+    """The ``plan``, ``entitlements`` and ``subscription`` block of ``/me`` (DD 4.2)."""
+    sub = repository.fetch_live_subscription(conn, user_id)
+    block = None if sub is None else {
+        "status": sub["status"], "plan_code": sub["plan_code"],
+        "trial_ends_at": _iso(sub["trial_ends_at"]),
+        "current_period_end": _iso(sub["current_period_end"]),
+        "cancel_at_period_end": sub["cancel_at_period_end"],
+        "grace_until": _iso(sub["grace_until"]), "pending_plan_code": sub["pending_plan_code"],
+    }  # fmt: skip
+    return {"plan": {"code": limits.plan_code, "name": limits.plan_name},
+            "entitlements": limits.to_json(), "subscription": block}  # fmt: skip

@@ -17,10 +17,11 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 
+from tradelens.modules.analysis.setups import SetupChanges, SetupScorer, setup_from_engine_json
 from tradelens.modules.market_data.public import SeriesStatus, StoredCandle
 from tradelens_engine.multi import BatchResult, step_batch
 from tradelens_engine.series import SeriesState
@@ -55,6 +56,8 @@ class CloseBatch:
     settings_hash: str
     rule_version: str
     result: BatchResult
+    setups: SetupChanges = field(default_factory=SetupChanges)  # scored with the batch (2.3)
+    asset_class: str = "forex"
 
     @property
     def steps(self) -> tuple[tuple[str, datetime], ...]:
@@ -79,6 +82,10 @@ class AnalysisStore(Protocol):
         """Write everything in ``batch`` inside the caller's transaction."""
         ...
 
+    def load_open_setups(self, instrument: str, settings_hash: str) -> list[Mapping[str, Any]]:
+        """``setups.engine`` of every confirmed setup of ``instrument``."""
+        ...
+
 
 def to_engine(candle: StoredCandle) -> Candle:
     """A stored candle as an engine candle (spread from the bid and ask closes)."""
@@ -89,10 +96,25 @@ def to_engine(candle: StoredCandle) -> Candle:
 class CloseProcessor:
     """Steps closed candles for the official settings of one rule version."""
 
-    def __init__(self, cfg: Settings, rule_version: str) -> None:
+    def __init__(self, cfg: Settings, rule_version: str, scorer: SetupScorer | None = None) -> None:
+        """Wire the processor.
+
+        Args:
+            cfg: Official settings of the rule version.
+            rule_version: The active rule version.
+            scorer: Scores setups with each batch (None: engine output only, Increment 1).
+        """
         self.cfg = cfg
         self.rule_version = rule_version
         self.settings_hash = cfg.hash(rule_version)
+        self.scorer = scorer
+
+    def _setups(self, store: AnalysisStore, instrument: str, result: BatchResult) -> SetupChanges:
+        if self.scorer is None:
+            return SetupChanges()
+        docs = store.load_open_setups(instrument, self.settings_hash)
+        open_setups = [setup_from_engine_json(d, self.scorer.weights) for d in docs]
+        return self.scorer.score(instrument, result, open_setups)
 
     def _state(self, store: AnalysisStore, instrument: str, tf: str) -> SeriesState | None:
         raw = store.load_state(instrument, tf, self.settings_hash)
@@ -149,6 +171,9 @@ class CloseProcessor:
                             rule_version=self.rule_version)  # fmt: skip
         if not result.steps:
             return None
-        batch = CloseBatch(instrument, self.settings_hash, self.rule_version, result)
+        meta = None if self.scorer is None else self.scorer.instruments.get(instrument)
+        batch = CloseBatch(instrument, self.settings_hash, self.rule_version, result,
+                           self._setups(store, instrument, result),
+                           "forex" if meta is None else meta.asset_class)  # fmt: skip
         store.save_batch(batch)
         return batch
