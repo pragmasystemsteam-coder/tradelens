@@ -66,6 +66,20 @@ class AppConfig:
     enable_api_docs: bool
     heartbeat_interval_seconds: int
     heartbeat_ttl_seconds: int
+    session_secret: str = ""
+    csrf_secret: str = ""
+    app_url: str = "https://app.tradelens.com"
+    config_dir: str = "config"
+    session_idle_days: int = 7
+    max_sessions_per_user: int = 2
+    rate_login_account: int = 5
+    rate_login_ip: int = 20
+    rate_api_user: int = 120
+    rate_custom_chart: int = 20
+    sse_max_streams: int = 6
+    sse_price_throttle_ms: int = 500
+    sse_ping_seconds: int = 25
+    price_stale_after_seconds: int = 60
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> AppConfig:
@@ -96,4 +110,17 @@ class AppConfig:
             enable_api_docs=env_bool(source.get("ENABLE_API_DOCS")),
             heartbeat_interval_seconds=interval,
             heartbeat_ttl_seconds=ttl,
+            session_secret=source.get("SESSION_SECRET", ""),
+            csrf_secret=source.get("CSRF_SECRET", ""),
+            app_url=source.get("APP_URL", "https://app.tradelens.com"),
+            config_dir=source.get("CONFIG_DIR", "config"),
+            session_idle_days=env_int(source, "SESSION_IDLE_DAYS", 7),
+            max_sessions_per_user=env_int(source, "MAX_SESSIONS_PER_USER", 2),
+            rate_login_account=env_int(source, "RATE_LIMIT_LOGIN_PER_ACCOUNT_PER_MIN", 5),
+            rate_login_ip=env_int(source, "RATE_LIMIT_LOGIN_PER_IP_PER_MIN", 20),
+            rate_api_user=env_int(source, "RATE_LIMIT_API_PER_USER_PER_MIN", 120),
+            rate_custom_chart=env_int(source, "RATE_LIMIT_CUSTOM_CHART_PER_USER_PER_MIN", 20),
+            sse_max_streams=env_int(source, "SSE_MAX_STREAMS_PER_USER", 6),
+            sse_price_throttle_ms=env_int(source, "SSE_PRICE_THROTTLE_MS", 500),
+            price_stale_after_seconds=env_int(source, "PRICE_STALE_AFTER_SECONDS", 60),
         )

@@ -19,12 +19,12 @@ endif
 COMPOSE := docker compose -f deploy/docker-compose.yml --env-file deploy/.env
 ALEMBIC := $(PY) -m alembic -c backend/alembic.ini
 
-.PHONY: help venv install test test-engine test-api lint-imports lint format typecheck check \
+.PHONY: e2e loadcheck test-db-renamed-plans help venv install test test-engine test-api lint-imports lint format typecheck check \
         migrate-sql doctor \
         build up down logs health psql migrate seed load-plans create-user init
 
 help:
-	@echo "Local:     venv install test test-engine test-api lint lint-imports typecheck check migrate-sql doctor verify-instruments web-check"
+	@echo "Local:     venv install test test-engine test-api lint lint-imports typecheck check migrate-sql doctor verify-instruments web-check e2e loadcheck test-db-renamed-plans"
 	@echo "Container: init build up down logs health psql migrate seed load-plans create-user test-db"
 
 venv:
@@ -85,6 +85,18 @@ web-check:
 # Integration tests against a throwaway PostgreSQL 16 on 127.0.0.1:55432 (always removed afterwards).
 test-db:
 	$(PY) scripts/test_db.py
+
+# Same API tests with every plan code renamed in plans.json (FR-SUB-01, task 2.10).
+test-db-renamed-plans:
+	TL_RENAMED_PLANS=1 $(PY) scripts/test_db.py backend/tests/integration/api
+
+# Playwright smoke scripts (E2E-2) against a throwaway stack; uses the installed Chrome.
+e2e:
+	$(PY) scripts/e2e.py
+
+# 100 concurrent scanner loads and 100 SSE streams, p95 under 2 s (NFR-01, NFR-04).
+loadcheck:
+	$(PY) scripts/e2e.py --load
 
 # ---- container targets ---------------------------------------------------
 build:

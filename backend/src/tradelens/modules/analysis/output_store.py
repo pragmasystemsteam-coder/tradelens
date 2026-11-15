@@ -16,8 +16,10 @@ from typing import Any
 from sqlalchemy import Connection, text
 
 from tradelens.modules.analysis.process import CloseBatch
+from tradelens.modules.analysis.setups import setup_to_engine_json
 from tradelens_engine.events import Event, Zone
 from tradelens_engine.rules.liquidity import Level, LevelChange
+from tradelens_engine.scoring import Setup
 from tradelens_engine.series import STATE_VERSION
 
 INSERT_EVENT = text(
@@ -69,6 +71,60 @@ LOAD_STATE = text(
     "SELECT state FROM series_state WHERE instrument = :i AND timeframe = :tf"
     " AND settings_hash = :h"
 )
+INSERT_SETUP = text(
+    "INSERT INTO setups (id, instrument, asset_class, timeframe, profile, settings_hash,"
+    " rule_version, scoring_version, direction, break_event_id, break_type, patterns, sessions,"
+    " spread, q, c, combined, counter_trend, factors, explanation, ob_zone_id, fvg_zone_id,"
+    " invalidation, opposing_level, status, status_time, revision, ltf_confirmed_at,"
+    " origin_time, confirm_time, engine) VALUES (:id, :instrument, :asset_class, :timeframe,"
+    " :profile, :settings_hash, :rule_version, :scoring_version, :direction, :break_event_id,"
+    " :break_type, :patterns, :sessions, :spread, :q, :c, :combined, :counter_trend,"
+    " CAST(:factors AS jsonb), :explanation, :ob_zone_id, :fvg_zone_id, :invalidation,"
+    " :opposing_level, :status, :status_time, :revision, :ltf_confirmed_at, :origin_time,"
+    " :confirm_time, CAST(:engine AS jsonb)) ON CONFLICT (id) DO NOTHING"
+)
+UPDATE_SETUP = text(
+    "UPDATE setups SET q = :q, c = :c, combined = :combined, factors = CAST(:factors AS jsonb),"
+    " explanation = :explanation, status = :status, status_time = :status_time,"
+    " revision = :revision, ltf_confirmed_at = :ltf_confirmed_at,"
+    " engine = CAST(:engine AS jsonb) WHERE id = :id AND revision < :revision"
+)
+INSERT_REVISION = text(
+    "INSERT INTO setup_revisions (setup_id, rev, q, c, combined, status, factors, reason,"
+    " effective_time) VALUES (:setup_id, :rev, :q, :c, :combined, :status,"
+    " CAST(:factors AS jsonb), :reason, :effective_time) ON CONFLICT DO NOTHING"
+)
+LOAD_OPEN_SETUPS = text(
+    "SELECT engine FROM setups WHERE instrument = :i AND settings_hash = :h"
+    " AND status = 'confirmed' AND engine <> '{}'::jsonb ORDER BY confirm_time, id"
+)
+
+
+def _setup_row(s: Setup, asset_class: str) -> dict[str, Any]:
+    c = s.candidate
+    return {
+        "id": s.id, "instrument": c.instrument, "asset_class": asset_class,
+        "timeframe": c.timeframe, "profile": c.profile, "settings_hash": c.settings_hash,
+        "rule_version": c.rule_version, "scoring_version": s.scoring_version,
+        "direction": c.direction, "break_event_id": c.break_event_id,
+        "break_type": c.break_type, "patterns": list(c.patterns), "sessions": list(c.sessions),
+        "spread": c.spread, "q": s.q, "c": s.c, "combined": s.combined,
+        "counter_trend": s.counter_trend,
+        "factors": json.dumps([f.to_json() for f in s.factors]),
+        "explanation": s.explanation, "ob_zone_id": c.ob_zone_id, "fvg_zone_id": c.fvg_zone_id,
+        "invalidation": c.invalidation, "opposing_level": c.opposing_level,
+        "status": s.status, "status_time": s.status_time, "revision": s.revision,
+        "ltf_confirmed_at": s.ltf_confirmed_at, "origin_time": c.origin_time,
+        "confirm_time": c.confirm_time, "engine": json.dumps(setup_to_engine_json(s)),
+    }  # fmt: skip
+
+
+def _revision_rows(s: Setup) -> list[dict[str, Any]]:
+    return [{
+        "setup_id": s.id, "rev": r.rev, "q": r.q, "c": r.c, "combined": r.combined,
+        "status": r.status, "factors": json.dumps([f.to_json() for f in r.factors]),
+        "reason": r.reason, "effective_time": r.effective_time,
+    } for r in s.revisions]  # fmt: skip
 
 
 def _event_row(e: Event) -> dict[str, Any]:
@@ -151,7 +207,30 @@ class SqlAnalysisStore:
             )
         self._zone_states(batch, transitions)
         self._levels(levels)
+        self._setups(batch)
         self._states(batch)
+
+    def load_open_setups(self, instrument: str, settings_hash: str) -> list[Mapping[str, Any]]:
+        """``setups.engine`` of every confirmed setup of ``instrument`` (oldest first)."""
+        rows = self._conn.execute(LOAD_OPEN_SETUPS, {"i": instrument, "h": settings_hash})
+        return [dict(r[0]) for r in rows]
+
+    def _setups(self, batch: CloseBatch) -> None:
+        """Insert new setups, then move every touched setup to its latest revision.
+
+        Inserts are ``ON CONFLICT DO NOTHING`` and the update only moves a setup forward
+        (``revision < :revision``), so re-processing never rewrites a newer revision.
+        """
+        changed = batch.setups.all()
+        if not changed:
+            return
+        created = [_setup_row(s, batch.asset_class) for s in batch.setups.created]
+        if created:
+            self._conn.execute(INSERT_SETUP, created)
+        self._conn.execute(UPDATE_SETUP, [_setup_row(s, batch.asset_class) for s in changed])
+        revisions = [r for s in changed for r in _revision_rows(s)]
+        if revisions:
+            self._conn.execute(INSERT_REVISION, revisions)
 
     def _zone_states(self, batch: CloseBatch, transitions: list[tuple[str, str, Any]]) -> None:
         latest: dict[str, tuple[str, Any]] = {}

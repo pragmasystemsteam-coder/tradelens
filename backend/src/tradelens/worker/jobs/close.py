@@ -20,15 +20,17 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 from tradelens.modules.analysis.public import (
     AnalysisStore,
     CandleSource,
     CloseBatch,
     CloseProcessor,
+    group_rows,
 )
 from tradelens.modules.market_data.public import InstrumentReport
-from tradelens.worker.publish import Publisher, chart_updated, status_changed
+from tradelens.worker.publish import Publisher, chart_updated, scanner_updated, status_changed
 from tradelens.worker.scheduler import next_run_at
 
 log = logging.getLogger("tradelens.worker.close")
@@ -56,6 +58,7 @@ class CloseJob:
         processor: CloseProcessor,
         publisher: Publisher,
         clock: Callable[[], datetime],
+        scanner: Callable[[], list[dict[str, Any]]] | None = None,
     ) -> None:
         """Wire the job.
 
@@ -65,12 +68,27 @@ class CloseJob:
             processor: Steps the engine for the active rule version.
             publisher: Redis client used for pub/sub.
             clock: UTC clock (frozen in tests).
+            scanner: Reads every confirmed setup as ``/setups`` rows (None: no scanner cache,
+                Increment 1).
         """
         self._ingest = ingest
         self._transaction = transaction
         self._processor = processor
         self._pub = publisher
         self._clock = clock
+        self._scanner = scanner
+
+    def _publish_scanner(self, report: CloseReport) -> None:
+        """Rebuild the scanner cache after a pass that stepped anything (task 2.3)."""
+        if self._scanner is None or not report.batches:
+            return
+        try:
+            rows = self._scanner()
+        except Exception:
+            log.exception("scanner cache rebuild failed; the API reads the database")
+            return
+        as_of = max(t for b in report.batches.values() for t in b.last_close().values())
+        scanner_updated(self._pub, group_rows(rows), as_of)
 
     def run_once(self) -> CloseReport:
         """Ingest, process and publish; a failing instrument never stops the others."""
@@ -91,6 +109,7 @@ class CloseJob:
             if batch is not None:
                 report.batches[rep.instrument] = batch
                 chart_updated(self._pub, rep.instrument, batch.last_close())
+        self._publish_scanner(report)
         report.seconds = time.perf_counter() - started
         log.info("close pass done", extra={
             "seconds": round(report.seconds, 3), "stepped": len(report.batches),

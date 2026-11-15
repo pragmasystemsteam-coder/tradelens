@@ -50,3 +50,24 @@ def insert_series_status(conn: Connection, rows: Sequence[dict[str, Any]]) -> No
     """Insert one series_status row per instrument and timeframe (55 in Release 1)."""
     if rows:
         conn.execute(INSERT_SERIES, list(rows))
+
+
+INSTRUMENTS = text(
+    "SELECT code, display_name, asset_class, price_scale, pip_scale FROM instruments"
+    " WHERE active ORDER BY sort_order, code"
+)
+STATUS = text(
+    "SELECT s.instrument, s.timeframe, s.status, s.last_candle_time, s.delayed_since,"
+    " i.asset_class FROM series_status s JOIN instruments i ON i.code = s.instrument"
+    " ORDER BY i.sort_order, s.instrument, s.timeframe"
+)
+
+
+def instrument_rows(conn: Connection) -> list[dict[str, Any]]:
+    """Active instruments in display order (``/instruments``)."""
+    return [dict(r) for r in conn.execute(INSTRUMENTS).mappings()]
+
+
+def series_status_rows(conn: Connection) -> list[dict[str, Any]]:
+    """Every series status with its instrument's asset class (``/status/data``)."""
+    return [dict(r) for r in conn.execute(STATUS).mappings()]

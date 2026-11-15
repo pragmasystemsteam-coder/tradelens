@@ -22,6 +22,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import FrameType
+from typing import Any
 
 from redis.exceptions import RedisError
 from sqlalchemy import Engine
@@ -31,7 +32,14 @@ from tradelens.core.db import get_engine
 from tradelens.core.logging import configure_logging
 from tradelens.core.redis import create_redis
 from tradelens.integrations.providers import build_candle_provider
-from tradelens.modules.analysis.public import CloseProcessor, SqlAnalysisStore, load_active_rule
+from tradelens.modules.analysis.public import (
+    CloseProcessor,
+    InstrumentMeta,
+    SqlAnalysisStore,
+    load_active_rule,
+    load_scanner_rows,
+    scorer_for,
+)
 from tradelens.modules.market_data.public import (
     IngestService,
     SqlCandleStore,
@@ -125,12 +133,25 @@ def build_close_job(env: Mapping[str, str], engine: Engine, publisher: Publisher
     service = build_ingest_service(env)
     with engine.connect() as conn:
         rule = load_active_rule(conn)
+    specs = load_instrument_specs(Path(env.get("CONFIG_DIR", DEFAULT_CONFIG_DIR)))
+    scorer = scorer_for(
+        rule.weights,
+        rule.settings.counter_trend,
+        {s.code: InstrumentMeta(s.asset_class, s.price_scale, s.normal_spread) for s in specs},
+    )
+    processor = CloseProcessor(rule.settings, rule.version, scorer)
+
+    def scanner_rows() -> list[dict[str, Any]]:
+        with engine.connect() as conn:
+            return load_scanner_rows(conn, processor.settings_hash, scorer.weights.high_quality)
+
     return CloseJob(
         ingest=lambda: run_ingest_once(engine, service, utc_now),
         transaction=lambda: sql_transaction(engine),
-        processor=CloseProcessor(rule.settings, rule.version),
+        processor=processor,
         publisher=publisher,
         clock=utc_now,
+        scanner=scanner_rows,
     )
 
 

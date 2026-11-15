@@ -30,3 +30,6 @@ Thumbs.db
 
 # Release output
 release/
+# Playwright (E2E)
+playwright-report/
+test-results/

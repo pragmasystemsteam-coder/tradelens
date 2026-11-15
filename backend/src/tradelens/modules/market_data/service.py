@@ -219,6 +219,9 @@ class InstrumentSpec:
     pip_scale: int
     calendar: Calendar
     twelvedata_symbol: str | None
+    asset_class: str = "forex"
+    display_name: str = ""
+    normal_spread: int = 0  # smallest units; scoring's spread factor (DD 6.4)
 
 
 def load_instrument_specs(config_dir: Path) -> list[InstrumentSpec]:
@@ -248,6 +251,9 @@ def load_instrument_specs(config_dir: Path) -> list[InstrumentSpec]:
                 pip_scale=row["pip_scale"],
                 calendar=calendars[row["calendar_code"]],
                 twelvedata_symbol=symbols.get("twelvedata"),
+                asset_class=row["asset_class"],
+                display_name=row["display_name"],
+                normal_spread=row["normal_spread"],
             )
         )
     return specs

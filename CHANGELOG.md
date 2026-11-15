@@ -5,6 +5,27 @@ versions follow the increments (0.1 = Increment 1, 0.2 = Increment 2, 1.0 = Rele
 
 ## [Unreleased]
 
+### Added (Day 5, 15 Nov 2026)
+- Worker setups and revisions with each close batch, batch-end re-evaluation, Redis scanner cache and
+  `scanner.updated` (task 2.3; migration 0003 `setups.engine`).
+- API foundation: DD 4.1 error body, request IDs, `__Host-` session and CSRF cookies (HMAC-stored, 7-day sliding
+  idle, 2 sessions), Origin and CSRF checks, Redis rate limits, entitlements from limit keys only (cached 60 s),
+  `/auth/login`, `/auth/logout`, `/me` (task 2.4).
+- `/setups`, `/setups/{id}`, `/instruments`, `/prices`, `/status/data` (task 2.5); `/charts`, `/candles` with on-demand
+  preset compute (thread pool, 15-minute cache, 20/min) (task 2.6); watchlists (task 2.7); SSE `/stream` (task 2.8).
+- Customer web app: sign-in, scanner, chart (Lightweight Charts v5 overlays), setup panel, watchlists, methodology,
+  phone layout; ESLint feature boundaries; Playwright E2E-2 via `scripts/e2e.py` (task 2.9).
+- `scripts/loadcheck.py`, renamed-plan-codes gating rerun, Day 9 demo checklist `docs/demo/INCREMENT2_DEMO.md`;
+  Makefile `e2e`, `loadcheck`, `test-db-renamed-plans` (task 2.10).
+
+### Changed (Day 5)
+- Request-validation errors answer 400 `validation_error` (was FastAPI's 422), per DD 4.1.
+- Caddy overwrites `X-Forwarded-For` with the resolved client IP on API routes.
+- The API refuses to start outside development/test without two different secrets of 32+ characters.
+- `worker/main.py` builds the scorer through `analysis.scorer_for` (only analysis imports the engine).
+- API database pool 10 + 30 connections with a matching worker-thread limit and an async admission gate; every
+  database dependency commits before the response is sent.
+
 ### Added (Day 4, 10 Nov 2026)
 - Worker candle-close pipeline (task 1.9): ingest, engine `step_batch` per instrument (highest timeframe first),
   events and state in one transaction, delayed series never stepped, restart from `series_state`, Redis

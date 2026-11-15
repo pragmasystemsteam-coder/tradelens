@@ -15,7 +15,7 @@ from typing import Any, Protocol
 
 from redis.exceptions import RedisError
 
-from tradelens.core.keys import DATA_CHANNEL, updates_channel
+from tradelens.core.keys import DATA_CHANNEL, SCANNER_CHANNEL, scanner_key, updates_channel
 
 log = logging.getLogger("tradelens.worker.publish")
 TIMEFRAMES = ("5m", "15m", "1h", "4h", "1d")
@@ -55,6 +55,29 @@ def chart_updated(
     for tf, t in last_close.items():
         send(publisher, updates_channel(instrument), "chart.updated",
              {"instrument": instrument, "timeframe": tf, "last_close": iso(t)})  # fmt: skip
+
+
+def scanner_updated(
+    publisher: Publisher,
+    groups: Mapping[tuple[str, str], list[dict[str, Any]]],
+    data_as_of: datetime,
+) -> bool:
+    """Store every ``scanner:{direction}:{timeframe}`` list, then send ``scanner.updated``.
+
+    The cache is written before the message, so a browser that refetches on the message reads
+    the new list. Returns False when Redis is unavailable (the API then reads the database).
+    """
+    as_of = iso(data_as_of)
+    try:
+        for (direction, tf), rows in groups.items():
+            doc = {"data_as_of": as_of, "items": rows}
+            publisher.set(scanner_key(direction, tf), json.dumps(doc))
+    except (RedisError, OSError) as exc:
+        log.warning("scanner cache write failed", extra={"error": type(exc).__name__})
+        return False
+    for tf in sorted({tf for _, tf in groups}):
+        send(publisher, SCANNER_CHANNEL, "scanner.updated", {"timeframe": tf, "data_as_of": as_of})
+    return True
 
 
 def status_changed(
