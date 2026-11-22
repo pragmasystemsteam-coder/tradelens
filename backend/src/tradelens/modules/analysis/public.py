@@ -20,6 +20,7 @@ from tradelens.modules.analysis.chart import (
     window_overlays,
 )
 from tradelens.modules.analysis.chart_data import SqlChartSource, chart_payload
+from tradelens.modules.analysis.instrument_view import instrument_analysis
 from tradelens.modules.analysis.output_store import SqlAnalysisStore
 from tradelens.modules.analysis.process import (
     AnalysisStore,
@@ -73,6 +74,7 @@ __all__ = [
     "find_preset",
     "group_rows",
     "htf_zones",
+    "instrument_analysis",
     "load_active_rule",
     "load_scanner_rows",
     "official_rule",

@@ -14,6 +14,7 @@ import type {
   UTCTimestamp,
 } from "lightweight-charts";
 
+import type { ChartPalette } from "@/lib/theme";
 import { toUnixSeconds } from "@/lib/time";
 import type { ChartPayload } from "@/lib/types";
 
@@ -33,16 +34,50 @@ type Box = {
   stroke: string;
   width: number;
   dash: boolean;
+  label?: string;
+  labelColor?: string;
 };
 type Segment = { x1: number; x2: number; y: number; color: string; dash: boolean; label: string };
 
 const ENDED = new Set(["filled", "invalidated", "expired"]);
-const COLORS = {
-  bull: { fill: "rgba(38,166,154,0.16)", stroke: "rgba(38,166,154,0.9)" },
-  bear: { fill: "rgba(239,83,80,0.16)", stroke: "rgba(239,83,80,0.9)" },
+type Rgb = ChartPalette["rgb"];
+const DEFAULT_RGB: Rgb = {
+  bull: "52,198,168",
+  bear: "242,115,94",
+  primary: "124,176,255",
+  warn: "240,164,58",
+  muted: "157,174,192",
+};
+const rgba = (rgb: string, a: number) => `rgba(${rgb},${a})`;
+const FADED = 0.22;
+
+/** Chosen patterns (CR-006): what stays in full colour; everything else fades or hides. */
+export type OverlayFilter = {
+  kinds: Set<string>;
+  /** "All": only zones of setups or candidates that have every chosen pattern. */
+  zoneIds: Set<string> | null;
+  /** "All": only events inside these [start, end] unix-second windows. */
+  windows: [number, number][] | null;
+  others: "fade" | "hide";
+} | null;
+
+/** A current candidate (display only): drawn dashed with a "Candidate, not a setup" label. */
+export type CandidateMark = {
+  direction: "bull" | "bear";
+  low: number | null;
+  high: number | null;
+  level: number | null;
+  time: string;
 };
 
-/** Snap a UTC time to the bar that contains it (times between bars have no coordinate). */
+/** Whether an event of ``type`` confirmed at ``t`` (unix seconds) is chosen by the filter. */
+export function eventChosen(filter: OverlayFilter, type: string, t: number): boolean {
+  if (!filter) return true;
+  if (!filter.kinds.has(type)) return false;
+  return !filter.windows || filter.windows.some(([a, b]) => t >= a && t <= b);
+}
+
+/** Snap a UTC time to the bar that contains it (times between bars have no coordinate) */
 export function snap(bars: number[], t: number): number {
   if (bars.length === 0) return t;
   let lo = 0;
@@ -66,6 +101,22 @@ export class OverlayPrimitive implements ISeriesPrimitive<Time> {
   private highlight: string | null = null;
   private boxes: Box[] = [];
   private segments: Segment[] = [];
+  private rgb: Rgb = DEFAULT_RGB;
+  private filter: OverlayFilter = null;
+  private candidates: CandidateMark[] = [];
+
+  /** Pattern filter and current candidates (CR-006). */
+  setExtras(filter: OverlayFilter, candidates: CandidateMark[]): void {
+    this.filter = filter;
+    this.candidates = candidates;
+    this.requestUpdate?.();
+  }
+
+  /** Theme colours from the CSS tokens (Chart.tsx calls this on load and on theme change). */
+  setPalette(palette: ChartPalette): void {
+    this.rgb = palette.rgb;
+    this.requestUpdate?.();
+  }
 
   attached(param: SeriesAttachedParameter<Time>): void {
     this.chart = param.chart as IChartApi;
@@ -107,14 +158,18 @@ export class OverlayPrimitive implements ISeriesPrimitive<Time> {
         const y2 = y(z.low);
         if (x1 === null || x2 === null || y1 === null || y2 === null) continue;
         const on = z.id === this.highlight;
-        const c = COLORS[z.direction];
+        const f = this.filter;
+        const chosen = !f || (f.kinds.has(z.kind) && (!f.zoneIds || f.zoneIds.has(z.id))) || on;
+        if (!chosen && f?.others === "hide") continue;
+        const k = chosen ? 1 : FADED;
+        const c = this.rgb[z.direction];
         this.boxes.push({
           x1,
           x2: Math.max(x2, x1 + 4),
           y1,
           y2,
-          fill: on ? c.fill.replace("0.16", "0.38") : c.fill,
-          stroke: c.stroke,
+          fill: rgba(c, (on ? 0.38 : 0.16) * k),
+          stroke: rgba(c, 0.9 * k),
           width: on ? 3 : 1,
           dash: false,
         });
@@ -125,25 +180,33 @@ export class OverlayPrimitive implements ISeriesPrimitive<Time> {
         const x1 = x(z.confirm_time);
         const x2 = x(null);
         if (x1 === null || x2 === null || y1 === null || y2 === null) continue;
+        const hChosen = !this.filter || this.filter.kinds.has(z.kind);
+        if (!hChosen && this.filter?.others === "hide") continue;
+        const hk = hChosen ? 1 : FADED;
         this.boxes.push({
           x1,
           x2: Math.max(x2, x1 + 4),
           y1,
           y2,
-          fill: "rgba(120,120,160,0.08)",
-          stroke: "rgba(120,120,160,0.8)",
+          fill: rgba(this.rgb.muted, 0.08 * hk),
+          stroke: rgba(this.rgb.muted, 0.8 * hk),
           width: 1,
           dash: true,
         });
       }
     }
-    if (this.layers.liquidity) {
+    // Liquidity and provisional swings are not patterns: with a filter they fade or hide.
+    const other = this.filter ? (this.filter.others === "hide" ? 0 : FADED) : 1;
+    if (this.layers.liquidity && other > 0) {
       for (const lv of payload.liquidity) {
         const x1 = x(lv.confirm_time);
         const x2 = x(lv.end_time);
         const yy = y(lv.price);
         if (x1 === null || x2 === null || yy === null) continue;
-        const color = lv.side === "buy" ? "rgba(41,98,255,0.85)" : "rgba(255,152,0,0.9)";
+        const color =
+          lv.side === "buy"
+            ? rgba(this.rgb.primary, 0.85 * other)
+            : rgba(this.rgb.warn, 0.9 * other);
         this.segments.push({
           x1,
           x2,
@@ -154,7 +217,7 @@ export class OverlayPrimitive implements ISeriesPrimitive<Time> {
         });
       }
     }
-    if (this.layers.provisional) {
+    if (this.layers.provisional && other > 0) {
       for (const s of payload.provisional.swings) {
         const xx = x(s.origin_time);
         const yy = y(s.price);
@@ -163,11 +226,47 @@ export class OverlayPrimitive implements ISeriesPrimitive<Time> {
           x1: xx - 12,
           x2: xx + 24,
           y: yy,
-          color: "rgba(90,90,90,0.9)",
+          color: rgba(this.rgb.muted, 0.9 * other),
           dash: true,
           label: "provisional",
         });
       }
+    }
+    // Current candidates: dashed, labelled, never mistaken for a setup.
+    const right = chart.timeScale().width();
+    for (const cand of this.candidates) {
+      const x1 = x(cand.time);
+      if (x1 === null) continue;
+      const tone = rgba(this.rgb.warn, 0.95);
+      if (cand.low !== null && cand.high !== null) {
+        const y1 = y(cand.high);
+        const y2 = y(cand.low);
+        if (y1 !== null && y2 !== null) {
+          this.boxes.push({
+            x1,
+            x2: Math.max(right, x1 + 4),
+            y1,
+            y2,
+            fill: rgba(this.rgb.warn, 0.1),
+            stroke: tone,
+            width: 1.5,
+            dash: true,
+            label: "Candidate, not a setup",
+            labelColor: tone,
+          });
+          continue;
+        }
+      }
+      const yy = cand.level !== null ? y(cand.level) : null;
+      if (yy !== null)
+        this.segments.push({
+          x1,
+          x2: right,
+          y: yy,
+          color: tone,
+          dash: true,
+          label: "Candidate, not a setup",
+        });
     }
   }
 
@@ -184,6 +283,11 @@ export class OverlayPrimitive implements ISeriesPrimitive<Time> {
             ctx.lineWidth = b.width;
             ctx.setLineDash(b.dash ? [4, 3] : []);
             ctx.strokeRect(b.x1, Math.min(b.y1, b.y2), b.x2 - b.x1, Math.abs(b.y2 - b.y1));
+            if (b.label) {
+              ctx.font = "600 10px sans-serif";
+              ctx.fillStyle = b.labelColor ?? b.stroke;
+              ctx.fillText(b.label, b.x1 + 4, Math.min(b.y1, b.y2) - 4);
+            }
           }
           ctx.font = "10px sans-serif";
           for (const s of segments) {

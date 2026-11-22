@@ -92,6 +92,16 @@ export const METHODOLOGY = [
     title: "Data delayed",
     text: "A series missed a candle. TradeLens keeps the last good data, marks it delayed and catches up when the data returns.",
   },
+  {
+    id: "forming-candle",
+    title: "Forming candle",
+    text: 'Charts show the current, unfinished candle faded after the last finished one, marked "Forming · not final". It is for display only: setups, scores and alerts use finished candles only. The forming candle updates every 5 minutes on the current data plan, and with every price tick once a live price stream (paid data plan or OANDA) is connected.',
+  },
+  {
+    id: "credits",
+    title: "Credits",
+    text: "Charts use the open-source Lightweight Charts library by TradingView (Apache 2.0).",
+  },
 ] as const;
 
 export type MethodologyAnchor = (typeof METHODOLOGY)[number]["id"];

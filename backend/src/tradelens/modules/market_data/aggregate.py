@@ -10,9 +10,16 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Sequence
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime
 
-from tradelens.modules.market_data.calendar import Calendar, bucket_open, expected_open_times
+from tradelens.modules.market_data.calendar import (
+    NY,
+    NY_ALIGNED,
+    Calendar,
+    bucket_open,
+    expected_open_times,
+)
 from tradelens.modules.market_data.candles import StoredCandle, timeframe_delta
 
 
@@ -80,3 +87,66 @@ def aggregate(
         if expected and set(expected) <= present:
             out.append(_merge(target_tf, open_time, members))
     return out
+
+
+@dataclass(frozen=True, slots=True)
+class FormingCandle:
+    """The current, unfinished candle of a timeframe: shown on charts, never stored or scored."""
+
+    timeframe: str
+    open_time: datetime
+    o: int
+    h: int
+    l: int  # noqa: E741 - OHLC naming used across the code base
+    c: int
+    closes_at: datetime
+
+
+def bucket_close(timeframe: str, open_time: datetime) -> datetime:
+    """Close time of the ``timeframe`` candle opening at ``open_time``.
+
+    4h and 1d follow New York wall-clock time, so a trading day is 23 or 25 hours long in the
+    weeks clocks change; the others are fixed lengths in UTC.
+    """
+    step = timeframe_delta(timeframe)
+    if timeframe not in NY_ALIGNED:
+        return open_time + step
+    wall = open_time.astimezone(NY).replace(tzinfo=None) + step
+    return wall.replace(tzinfo=NY).astimezone(UTC)
+
+
+def forming_candle(
+    target_tf: str,
+    bars_5m: Sequence[StoredCandle],
+    last_closed: datetime | None,
+    now: datetime,
+) -> FormingCandle | None:
+    """The ``target_tf`` candle open at ``now``, built from the finished 5m candles inside it.
+
+    Display only (charts): the engine, setups, scores and alerts use finished candles only.
+
+    Args:
+        target_tf: 15m, 1h, 4h or 1d (5m has no forming candle: no data inside 5 minutes).
+        bars_5m: Recent stored 5m candles of one instrument.
+        last_closed: Open time of the newest finished ``target_tf`` candle, if any.
+        now: Current UTC time.
+
+    Returns:
+        The forming candle, or None when the period has no finished 5m candle yet or its
+        finished candle is already stored.
+    """
+    if target_tf == "5m":
+        return None
+    open_time = bucket_open(target_tf, now)
+    if last_closed is not None and last_closed >= open_time:
+        return None
+    members = sorted(
+        (b for b in bars_5m
+         if b.close_time <= now and bucket_open(target_tf, b.open_time) == open_time),
+        key=lambda b: b.open_time,
+    )  # fmt: skip
+    if not members:
+        return None
+    m = _merge(target_tf, open_time, members)
+    return FormingCandle(target_tf, open_time, m.o, m.h, m.l, m.c,
+                         bucket_close(target_tf, open_time))  # fmt: skip

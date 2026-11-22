@@ -1,0 +1,13 @@
+Subject: Verify your TradeLens email
+
+Welcome to TradeLens.
+
+Open this link to verify your email address. It works once and expires in $ttl_hours hours:
+
+$link
+
+After you verify, you can sign in.
+
+If you did not create a TradeLens account, ignore this email.
+
+TradeLens - analytics only. TradeLens does not place trades or give investment advice.

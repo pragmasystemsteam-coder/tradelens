@@ -5,6 +5,7 @@ import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 import { useMe } from "@/components/layout/AppShell";
 import { Disclaimer } from "@/components/ui/Disclaimer";
+import { WarnIcon } from "@/components/ui/Icons";
 import { ProLock } from "@/components/ui/ProLock";
 import { api, ApiError } from "@/lib/api";
 import { formatPrice } from "@/lib/price";
@@ -22,6 +23,7 @@ export function WatchlistsPage() {
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [name, setName] = useState("");
   const [error, setError] = useState<ApiError | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
   const loadLists = useCallback(async () => {
     const body = await api<{ items: Watchlist[]; limits: { max_watchlists: number | null } }>(
@@ -30,6 +32,7 @@ export function WatchlistsPage() {
     setLists(body.items);
     setLimits(body.limits);
     setSelected((cur) => cur ?? body.items[0]?.id ?? null);
+    setLoaded(true);
   }, []);
 
   const loadDetail = useCallback(async () => {
@@ -82,109 +85,155 @@ export function WatchlistsPage() {
     });
   }
 
+  const max = limits?.max_watchlists ?? null;
+  const atLimit = max !== null && lists.length >= max;
+
   return (
     <div className="watchlists-page">
-      <h1>Watchlists</h1>
-      <div className="watchlist-tabs">
-        {lists.map((w) => (
-          <button
-            key={w.id}
-            type="button"
-            className={w.id === selected ? "chip chip--on" : "chip"}
-            onClick={() => setSelected(w.id)}
-          >
-            {w.name}
+      <aside className="watchlist-side" aria-label="Your watchlists">
+        <h1>Watchlists</h1>
+        <ul className="watchlist-tabs">
+          {lists.map((w) => (
+            <li key={w.id}>
+              <button
+                type="button"
+                className="watchlist-tab"
+                aria-current={w.id === selected ? "true" : undefined}
+                onClick={() => setSelected(w.id)}
+              >
+                {w.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+        <form className="inline-form" onSubmit={create}>
+          <input
+            aria-label="New watchlist name"
+            value={name}
+            maxLength={60}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="New watchlist"
+            required
+          />
+          <button type="submit" className="button button--secondary">
+            Create
           </button>
-        ))}
-      </div>
-      <form className="inline-form" onSubmit={create}>
-        <input
-          aria-label="New watchlist name"
-          value={name}
-          maxLength={60}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="New watchlist"
-          required
-        />
-        <button type="submit" className="button">
-          Create
-        </button>
+        </form>
         {limits && (
-          <span className="hint">Up to {limits.max_watchlists ?? "unlimited"} watchlists</span>
+          <span className="hint">
+            {max === null
+              ? `${lists.length} watchlists`
+              : `${lists.length} of ${max} ${max === 1 ? "watchlist" : "watchlists"} used`}
+            {atLimit ? ". You are at your plan's limit." : ""}
+          </span>
         )}
-      </form>
-      {error?.needsUpgrade && <ProLock label="raises your watchlist and instrument limits" />}
-      {error && !error.needsUpgrade && (
-        <p className="error" role="alert" data-testid="watchlist-error">
-          {error.code === "plan_limit" ? "You have reached the limit of your plan." : error.message}
-        </p>
-      )}
-      {detail && (
-        <section aria-label={detail.name}>
-          <label>
-            Add instrument
-            <select value="" onChange={(e) => void add(e.target.value)}>
-              <option value="">Choose…</option>
-              {instruments
-                .filter((i) => !detail.items.some((it) => it.instrument === i.code))
-                .map((i) => (
-                  <option key={i.code} value={i.code}>
-                    {i.display_name}
-                    {i.available ? "" : " (Pro)"}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <table className="watchlist-table" data-testid="watchlist-table">
-            <thead>
-              <tr>
-                <th>Instrument</th>
-                <th>Last</th>
-                <th>Best setup</th>
-                <th>Data</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {detail.items.map((it) => (
-                <tr key={it.instrument}>
-                  <td>{it.display_name}</td>
-                  <td>{formatPrice(it.last_price, it.price_scale)}</td>
-                  <td>
-                    {it.best_setup ? (
-                      <Link
-                        href={`/chart/${it.instrument}/${it.best_setup.timeframe}?setup=${it.best_setup.id}`}
-                      >
-                        {it.best_setup.direction === "bull" ? "Bullish" : "Bearish"}{" "}
-                        {it.best_setup.timeframe.toUpperCase()} · {it.best_setup.combined}
-                      </Link>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td>
-                    {it.data_status === "ok" ? (
-                      "OK"
-                    ) : (
-                      <span className="badge badge--delayed">Data delayed</span>
-                    )}
-                  </td>
-                  <td>
-                    <button
-                      type="button"
-                      className="link-button"
-                      onClick={() => void remove(it.instrument)}
-                    >
-                      Remove
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <Disclaimer />
-        </section>
-      )}
+      </aside>
+      <section className="watchlist-main" aria-label={detail?.name ?? "Watchlist"}>
+        {error?.needsUpgrade && <ProLock label="raises your watchlist and instrument limits" />}
+        {error && !error.needsUpgrade && (
+          <p className="banner banner--error error" role="alert" data-testid="watchlist-error">
+            <WarnIcon />
+            <span>
+              {error.code === "plan_limit"
+                ? "You have reached the limit of your plan."
+                : error.message}
+            </span>
+          </p>
+        )}
+        {loaded && lists.length === 0 && (
+          <div className="empty" role="status">
+            <strong>You have no watchlists yet</strong>
+            <span>Name one on the left, then add the pairs you trade.</span>
+          </div>
+        )}
+        {detail && (
+          <>
+            <div className="watchlist-main__head">
+              <h2>{detail.name}</h2>
+              <label>
+                Add instrument
+                <select value="" onChange={(e) => void add(e.target.value)}>
+                  <option value="">Choose…</option>
+                  {instruments
+                    .filter((i) => !detail.items.some((it) => it.instrument === i.code))
+                    .map((i) => (
+                      <option key={i.code} value={i.code}>
+                        {i.display_name}
+                        {i.available ? "" : " (Pro)"}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            </div>
+            {detail.items.length === 0 ? (
+              <div className="empty" role="status">
+                <strong>This watchlist is empty</strong>
+                <span>Add an instrument to see its last price and best setup here.</span>
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table className="watchlist-table" data-testid="watchlist-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Instrument</th>
+                      <th scope="col">Last</th>
+                      <th scope="col">Best setup</th>
+                      <th scope="col">Data</th>
+                      <th scope="col">
+                        <span className="sr-only">Actions</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detail.items.map((it) => (
+                      <tr key={it.instrument}>
+                        <td>
+                          <strong>{it.display_name}</strong>
+                        </td>
+                        <td>{formatPrice(it.last_price, it.price_scale)}</td>
+                        <td>
+                          {it.best_setup ? (
+                            <Link
+                              className={`score-link score-link--${it.best_setup.direction}`}
+                              href={`/chart/${it.instrument}/${it.best_setup.timeframe}?setup=${it.best_setup.id}`}
+                            >
+                              <span className="score">{it.best_setup.combined}</span>
+                              <span>
+                                {it.best_setup.direction === "bull" ? "▲ Bullish" : "▼ Bearish"}{" "}
+                                {it.best_setup.timeframe.toUpperCase()}
+                              </span>
+                            </Link>
+                          ) : (
+                            <span className="muted">No setup</span>
+                          )}
+                        </td>
+                        <td>
+                          {it.data_status === "ok" ? (
+                            <span className="data-ok">OK</span>
+                          ) : (
+                            <span className="badge badge--delayed">Data delayed</span>
+                          )}
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="link-button"
+                            aria-label={`Remove ${it.display_name}`}
+                            onClick={() => void remove(it.instrument)}
+                          >
+                            Remove
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <Disclaimer />
+          </>
+        )}
+      </section>
     </div>
   );
 }

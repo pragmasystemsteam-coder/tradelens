@@ -31,6 +31,7 @@ from tradelens.modules.analysis.public import (
     decode_state,
     find_preset,
     htf_zones,
+    instrument_analysis,
     official_rule,
     overlays_from_json,
     overlays_json,
@@ -42,7 +43,9 @@ from tradelens.modules.analysis.public import (
     window_overlays,
 )
 from tradelens.modules.market_data.public import (
+    FormingCandle,
     StoredCandle,
+    forming_candle,
     instrument_rows,
     load_last_candles,
     series_status_rows,
@@ -131,6 +134,28 @@ def _status(conn: Connection, instrument: str, timeframe: str) -> dict[str, Any]
             "last_candle_time": iso(row["last_candle_time"])}  # fmt: skip
 
 
+FORMING_5M_LOOKBACK = 300  # 5m candles read for the forming candle (a 25-hour day is 300)
+
+
+def forming_json(f: FormingCandle | None) -> dict[str, Any] | None:
+    """``{t, o, h, l, c, closes_at}`` or None (integers in the smallest unit)."""
+    if f is None:
+        return None
+    return {"t": iso(f.open_time), "o": f.o, "h": f.h, "l": f.l, "c": f.c,
+            "closes_at": iso(f.closes_at)}  # fmt: skip
+
+
+def _forming(
+    conn: Connection, instrument: str, timeframe: str, last_closed: datetime | None,
+    now: datetime,
+) -> FormingCandle | None:  # fmt: skip
+    """The unfinished candle for display, from stored 5m candles; None while 5m is delayed."""
+    if timeframe == "5m" or _status(conn, instrument, "5m")["state"] == "delayed":
+        return None
+    bars = load_last_candles(conn, instrument, "5m", FORMING_5M_LOOKBACK)
+    return forming_candle(timeframe, bars, last_closed, now)
+
+
 def _live_price(redis: Any, instrument: str) -> dict[str, Any] | None:  # noqa: ANN401
     try:
         raw = redis.get(price_key(instrument))
@@ -175,8 +200,11 @@ def chart(
     req: ChartRequest,
     *,
     custom_rate: int,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """``GET /charts/{instrument}/{tf}`` (DD 4.2 chart response).
+
+    ``forming`` is the current, unfinished candle (display only; first page only).
 
     Raises:
         ApiError: 404 unknown instrument; 403 ``plan_required`` (commodity on Free, or a
@@ -223,6 +251,9 @@ def chart(
     htf = (htf_zones(conn, req.instrument, req.timeframe, rule.settings_hash,
                      page[-1].close_time) if page and limits.mtf_full else [])  # fmt: skip
     swings = [] if ov.state is None else provisional_swings(ov.state, settings, req.timeframe)
+    forming = (None if req.before is not None or now is None else
+               _forming(conn, req.instrument, req.timeframe,
+                        base[-1].open_time if base else None, now))  # fmt: skip
     return {
         "instrument": req.instrument, "timeframe": req.timeframe,
         "price_scale": inst["price_scale"],
@@ -234,6 +265,7 @@ def chart(
         "events": ov.events, "zones": ov.zones, "htf_zones": htf, "liquidity": ov.liquidity,
         "setups": setups, "trend_strip": trend_strip(states),
         "provisional": {"swings": swings}, "live_price": _live_price(redis, req.instrument),
+        "forming": forming_json(forming),
     }  # fmt: skip
 
 
@@ -252,3 +284,15 @@ def parse_before(value: str | None) -> datetime | None:
     if t.tzinfo is None:
         raise validation_error("before", "timezone_required")
     return t
+
+
+def analysis(
+    conn: Connection, limits: Limits, instrument: str, timeframe: str, now: datetime
+) -> dict[str, Any]:
+    """``GET /analysis/{instrument}/{tf}`` (CR-006): read-only, same gating as charts.
+
+    Raises:
+        ApiError: 404 unknown instrument; 403 ``plan_required`` for a commodity on Free.
+    """
+    inst = instrument_of(conn, instrument, limits)
+    return instrument_analysis(conn, inst, timeframe, now, mtf_full=limits.mtf_full)

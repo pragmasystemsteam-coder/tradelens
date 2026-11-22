@@ -1,0 +1,8 @@
+Subject: Your TradeLens Pro trial ends on $trial_ends
+
+Your 15-day Pro trial ends on $trial_ends. After that your account moves to Free; nothing is charged.
+
+Keep Pro:
+$link
+
+TradeLens

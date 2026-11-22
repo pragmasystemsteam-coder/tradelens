@@ -130,6 +130,15 @@ def seed_data() -> dict[str, str]:
         for code, asset, direction, combined in SETUPS:
             bars = provider.fetch(code, "1h", count=600, end=end - timedelta(hours=1))
             store.add([to_stored(b, code, "1h", "synthetic") for b in bars])
+            # Finished 5m candles inside the current hour, for the forming candle (display).
+            now5 = datetime.now(UTC).replace(second=0, microsecond=0)
+            now5 -= timedelta(minutes=now5.minute % 5)
+            if (n5 := (now5 - end) // timedelta(minutes=5)) > 0:
+                live5 = SyntheticProvider(load_instrument_specs(REPO / "config"), lambda t=now5: t)
+                five = live5.fetch(code, "5m", count=n5, end=now5 - timedelta(minutes=5))
+                store.add(
+                    [to_stored(b, code, "5m", "synthetic") for b in five if b.open_time >= end]
+                )
             rows = store.load(code, "1h", None)
             result = step_batch({}, {"1h": [to_engine(r) for r in rows]}, rule.settings,
                                 instrument=code, rule_version=rule.version)  # fmt: skip
@@ -212,10 +221,13 @@ def main() -> int:
     start_containers()
     try:
         extra = seed_data()
-        api_env = {**os.environ, "DATABASE_URL": DB_URL, "APP_ENV": "test",
+        # development: sign-up E2E opens the verification link through the dev-only button.
+        api_env = {**os.environ, "DATABASE_URL": DB_URL, "APP_ENV": "development",
                    "REDIS_URL": f"redis://127.0.0.1:{REDIS_PORT}/0",
                    "SESSION_SECRET": secrets.token_hex(32), "CSRF_SECRET": secrets.token_hex(32),
                    "APP_URL": f"http://localhost:{WEB_PORT}",
+                   # every E2E sign-up comes from one IP; the 5/min limit has its own API test
+                   "RATE_LIMIT_ANON_PER_IP_PER_MIN": "60",
                    "CONFIG_DIR": str(REPO / "config")}  # fmt: skip
         procs.append(subprocess.Popen(  # noqa: S603
             [sys.executable, "-m", "uvicorn", "tradelens.app.main:create_app", "--factory",
@@ -226,7 +238,7 @@ def main() -> int:
         if load:
             return run_loadcheck(extra["E2E_PASSWORD"])
         web_env = {**os.environ, "API_INTERNAL_URL": f"http://127.0.0.1:{API_PORT}",
-                   "NEXT_TELEMETRY_DISABLED": "1"}  # fmt: skip
+                   "NEXT_TELEMETRY_DISABLED": "1", "APP_ENV": "development"}  # fmt: skip
         subprocess.run([NPM, "run", "build"], cwd=WEB, env=web_env, check=True)  # noqa: S603
         procs.append(subprocess.Popen(  # noqa: S603
             [NPX, "next", "start", "-p", str(WEB_PORT)], cwd=WEB, env=web_env))  # fmt: skip

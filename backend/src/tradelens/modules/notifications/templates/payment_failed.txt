@@ -1,0 +1,8 @@
+Subject: Your TradeLens payment failed
+
+We could not take your latest TradeLens payment. Pro stays on until $grace_until.
+
+Update your payment method here:
+$link
+
+TradeLens

@@ -54,6 +54,29 @@ class Viewer:
 AccountSummary = Callable[[Connection, str], Mapping[str, Any]]
 
 
+@dataclass(frozen=True, slots=True)
+class AccountBilling:
+    """What accounts needs from billing, which sits in a higher layer (DD 4.3, 4.6; task 3.2).
+
+    Attributes:
+        start_trial: ``(conn, user_id, email, now) -> started``: the 15-day trial, once per
+            e-mail ever (``trial_claims``).
+        paid_subscription_live: ``(conn, user_id, now)``: a paid plan still grants access.
+        end_subscriptions: ``(conn, user_id, now)``: end every open subscription (deletion).
+        forget_entitlements: ``(redis, user_id)``: drop the cached limits.
+    """
+
+    start_trial: Callable[[Connection, str, str, datetime], bool]
+    paid_subscription_live: Callable[[Connection, str, datetime], bool]
+    end_subscriptions: Callable[[Connection, str, datetime], None]
+    forget_entitlements: Callable[[Any, str], None]
+
+
+def get_account_billing() -> AccountBilling:
+    """Billing hooks for sign-up, verification and deletion."""
+    raise NotWiredError("get_account_billing")
+
+
 def get_config() -> AppConfig:
     """The application configuration."""
     raise NotWiredError("get_config")

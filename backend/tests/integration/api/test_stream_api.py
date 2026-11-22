@@ -4,6 +4,8 @@ The forwarding, throttling and heartbeat rules are unit-tested in
 backend/tests/unit/modules/realtime/test_stream.py.
 """
 
+import time
+
 import pytest
 from api_support import client, make_app, new_user, sign_in
 
@@ -21,7 +23,7 @@ def test_commodity_topic_refused_free_over_http(db):
     email, uid = new_user(db)
     r = sign_in(app, email).get("/api/v1/stream", params={"topics": "scanner,price:XAU_USD"})
     assert r.status_code == 403 and r.json()["error"]["code"] == "plan_required"
-    assert redis.get(f"sse:{uid}") is None  # no slot taken for a refused stream
+    assert redis.get(f"sse:slots:{uid}") is None  # no slot taken for a refused stream
 
 
 def test_bad_topic_400(db):
@@ -35,10 +37,11 @@ def test_seventh_stream_429(db):
     app, _, redis = make_app(db)
     email, uid = new_user(db)
     c = sign_in(app, email)
-    redis.set(f"sse:{uid}", 6)  # six streams already open
+    now = time.time()  # the API scores slots with the real clock
+    redis.zadd(f"sse:slots:{uid}", {f"open{i}": now for i in range(6)})  # six live streams
     r = c.get("/api/v1/stream", params={"topics": "scanner"})
     assert r.status_code == 429 and r.json()["error"]["code"] == "rate_limited"
-    assert redis.get(f"sse:{uid}") == "6"
+    assert redis.zcard(f"sse:slots:{uid}") == 6
 
 
 def test_stream_opens_with_headers_and_retry(db):
@@ -52,4 +55,4 @@ def test_stream_opens_with_headers_and_retry(db):
         assert r.headers["x-accel-buffering"] == "no"
         first = next(r.iter_text())
         assert first.startswith("retry: 3000")
-        assert redis.get(f"sse:{uid}") == "1"
+        assert redis.zcard(f"sse:slots:{uid}") == 1

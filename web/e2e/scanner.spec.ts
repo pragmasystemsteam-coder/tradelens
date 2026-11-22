@@ -58,7 +58,9 @@ test("E2E-2: filter Bullish 1H score 60+, open the first row, see the zone and d
   const panel = page.getByTestId("setup-panel");
   await expect(panel.getByTestId("zone-highlight")).toBeVisible();
   await expect(panel.getByTestId("disclaimer")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Charts by TradingView" })).toBeVisible();
+  // D-ATTR: one attribution, the Lightweight Charts logo inside the chart (links to TradingView).
+  await expect(chart.locator('a[href*="tradingview.com"]')).toBeVisible();
+  await expect(page.getByText("Charts by TradingView", { exact: true })).toHaveCount(0);
   await expect(page.locator(".chart-area [data-testid=trend-strip] li.trend")).toHaveCount(5);
 
   const footer = page.getByTestId("footer");

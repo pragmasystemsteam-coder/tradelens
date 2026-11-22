@@ -4,7 +4,9 @@ One async generator per connection. Messages only say what changed; the browser 
 over REST, and after a reconnect it refetches everything it shows. ``price`` goes out at
 most every ``SSE_PRICE_THROTTLE_MS`` per instrument (latest tick wins), a ``: ping`` comment
 every 25 s, and ``session.ended`` for this session closes the stream. A user may hold
-``SSE_MAX_STREAMS_PER_USER`` (6) streams; the count lives in Redis ``sse:{user_id}``.
+``SSE_MAX_STREAMS_PER_USER`` (6) streams. Each open stream is a member of the Redis sorted
+set ``sse:slots:{user_id}`` scored by its last ping; a stream that died without closing (an API
+restart, a crash) lapses after ``SLOT_STALE_SECONDS``, so it never blocks the user for long.
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ import inspect
 import json
 import logging
 import time
+import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -29,7 +32,15 @@ from tradelens.core.limits import Limits
 
 log = logging.getLogger("tradelens.realtime")
 MAX_TOPICS = 20
-SLOT_TTL_SECONDS = 3600  # a crashed process cannot hold slots for longer
+SLOT_STALE_SECONDS = 90  # 3 missed 25 s pings: the stream is gone
+SLOT_KEY_TTL_SECONDS = 2 * SLOT_STALE_SECONDS
+
+
+def slot_key(user_id: str) -> str:
+    """The sorted set of a user's open streams (the older ``sse:{id}`` counter is retired)."""
+    return f"sse:slots:{user_id}"
+
+
 RETRY_MS = 3000
 
 
@@ -71,34 +82,48 @@ def parse_topics(
     return tuple(dict.fromkeys(channels))
 
 
-async def acquire_stream(aredis: Any, user_id: str, max_streams: int) -> None:  # noqa: ANN401
-    """Take one of the user's stream slots.
+async def acquire_stream(
+    aredis: Any,  # noqa: ANN401
+    user_id: str,
+    max_streams: int,
+    now: Callable[[], float] = time.time,
+) -> str:
+    """Take one of the user's stream slots and return its ID.
+
+    Slots whose last ping is older than ``SLOT_STALE_SECONDS`` are dropped first.
 
     Raises:
         ApiError: 429 ``rate_limited`` when all slots are taken.
     """
-    key = f"sse:{user_id}"
-    count = int(await aredis.incr(key))
-    await aredis.expire(key, SLOT_TTL_SECONDS)
-    if count > max_streams:
-        await aredis.decr(key)
+    key, t, slot = slot_key(user_id), now(), uuid.uuid4().hex
+    await aredis.zremrangebyscore(key, 0, t - SLOT_STALE_SECONDS)
+    await aredis.zadd(key, {slot: t})
+    await aredis.expire(key, SLOT_KEY_TTL_SECONDS)
+    if int(await aredis.zcard(key)) > max_streams:
+        await aredis.zrem(key, slot)
         raise rate_limited(5)
+    return slot
 
 
-async def keep_stream(aredis: Any, user_id: str) -> None:  # noqa: ANN401
-    """Refresh the slot key's TTL while a stream is open (called at each ping)."""
+async def keep_stream(
+    aredis: Any,  # noqa: ANN401
+    user_id: str,
+    slot: str,
+    now: Callable[[], float] = time.time,
+) -> None:
+    """Mark the stream alive (called at each ping)."""
+    key = slot_key(user_id)
     try:
-        await aredis.expire(f"sse:{user_id}", SLOT_TTL_SECONDS)
+        await aredis.zadd(key, {slot: now()})
+        await aredis.expire(key, SLOT_KEY_TTL_SECONDS)
     except Exception:  # noqa: BLE001 - a missed refresh must not end the stream
         log.warning("stream slot refresh failed", extra={"user_id": user_id})
 
 
-async def release_stream(aredis: Any, user_id: str) -> None:  # noqa: ANN401
-    """Give a slot back when a stream closes."""
-    key = f"sse:{user_id}"
+async def release_stream(aredis: Any, user_id: str, slot: str) -> None:  # noqa: ANN401
+    """Give a slot back when a stream closes (an unknown or lapsed slot is ignored)."""
     try:
-        if int(await aredis.decr(key)) < 0:  # the key expired while streams were open
-            await aredis.set(key, 0, ex=SLOT_TTL_SECONDS)
+        await aredis.zrem(slot_key(user_id), slot)
     except Exception:  # noqa: BLE001 - closing must never raise
         log.warning("stream slot release failed", extra={"user_id": user_id})
 

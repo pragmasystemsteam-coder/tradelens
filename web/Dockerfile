@@ -3,6 +3,9 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install --no-audit --no-fund
 COPY . .
+# The landing page reads prices and limits from config/ at build time (compose passes the
+# repository's config folder as the named build context "config").
+COPY --from=config plans.json instruments.json /config/
 RUN npm run build
 
 FROM node:22-alpine

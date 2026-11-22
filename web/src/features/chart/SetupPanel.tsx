@@ -1,4 +1,5 @@
 import { Disclaimer } from "@/components/ui/Disclaimer";
+import { LockIcon } from "@/components/ui/Icons";
 import { ProLock } from "@/components/ui/ProLock";
 import { Tip } from "@/components/ui/Tip";
 import { formatPrice } from "@/lib/price";
@@ -17,43 +18,70 @@ const FACTOR_NAMES: Record<string, string> = {
   ltf_confirm: "Lower-timeframe confirmation",
 };
 
-// Score tiles, factors, explanation, levels and times of one setup (Detailed Design 5.2).
+// Score tiles, "why it scored", explanation, levels and times of one setup (Detailed Design 5.2).
 export function SetupPanel({ setup, timeZone }: { setup: SetupDetail; timeZone: string }) {
   const scale = setup.price_scale;
   const locked = setup.factors.some((f) => f.locked);
+  const bull = setup.direction === "bull";
   return (
-    <aside className="setup-panel" data-testid="setup-panel" aria-label="Setup">
-      <h2>
-        {setup.display_name} {setup.direction === "bull" ? "Bullish" : "Bearish"}{" "}
-        {setup.timeframe.toUpperCase()}
-      </h2>
+    <aside
+      className={`setup-panel setup-panel--${setup.direction}`}
+      data-testid="setup-panel"
+      aria-label="Setup"
+    >
+      <div className="setup-panel__head">
+        <h2>
+          {setup.display_name} {setup.timeframe.toUpperCase()}
+        </h2>
+        <span className={`badge badge--${setup.direction}`}>
+          <span aria-hidden="true">{bull ? "▲" : "▼"}</span> {bull ? "Bullish" : "Bearish"}
+        </span>
+      </div>
       <div className="tiles">
-        <div className="tile">
-          <span>
-            Q <Tip anchor="quality-score" label="the quality score" />
-          </span>
-          <strong>{setup.q}</strong>
-        </div>
-        <div className="tile">
-          <span>
-            C <Tip anchor="context-score" label="the context score" />
-          </span>
-          <strong>{setup.c}</strong>
-        </div>
         <div className="tile tile--main">
           <span>
             Combined <Tip anchor="combined-score" label="the combined score" />
           </span>
           <strong data-testid="panel-combined">{setup.combined}</strong>
         </div>
+        <div className="tile">
+          <span>
+            Quality <Tip anchor="quality-score" label="the quality score" />
+          </span>
+          <strong>{setup.q}</strong>
+        </div>
+        <div className="tile">
+          <span>
+            Context <Tip anchor="context-score" label="the context score" />
+          </span>
+          <strong>{setup.c}</strong>
+        </div>
       </div>
-      {setup.high_quality && <p className="badge badge--hq">High quality</p>}
-      {setup.counter_trend && <p className="badge badge--warn">Counter-trend</p>}
+      {(setup.high_quality || setup.counter_trend) && (
+        <div className="setup-panel__badges">
+          {setup.high_quality && <span className="badge badge--hq">High quality</span>}
+          {setup.counter_trend && <span className="badge badge--warn">Counter-trend</span>}
+        </div>
+      )}
+      <h3>Why it scored {setup.combined}</h3>
       <ul className="factors" data-testid="factors">
         {setup.factors.map((f) => (
           <li key={f.code} className={f.locked ? "factor factor--locked" : "factor"}>
             <span>{FACTOR_NAMES[f.code] ?? f.code}</span>
-            <span>{f.locked ? "Pro" : `${f.points} / ${f.max}`}</span>
+            <i
+              className="factor__bar"
+              aria-hidden="true"
+              style={{ ["--v" as string]: f.locked || !f.max ? 0 : (f.points ?? 0) / f.max }}
+            />
+            <span className="factor__pts">
+              {f.locked ? (
+                <>
+                  <LockIcon size={10} /> Pro
+                </>
+              ) : (
+                `${f.points} / ${f.max}`
+              )}
+            </span>
           </li>
         ))}
       </ul>
@@ -75,7 +103,12 @@ export function SetupPanel({ setup, timeZone }: { setup: SetupDetail; timeZone: 
         <dd>{formatTime(setup.confirm_time, timeZone)}</dd>
       </dl>
       <Disclaimer />
-      <button type="button" className="button" disabled title="Alerts arrive in Increment 3">
+      <button
+        type="button"
+        className="button button--secondary"
+        disabled
+        title="Alerts arrive in Increment 3"
+      >
         Create alert
       </button>
     </aside>

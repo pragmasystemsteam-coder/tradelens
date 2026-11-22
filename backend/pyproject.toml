@@ -24,7 +24,7 @@ dependencies = [
 dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11", "import-linter>=2.1"]
 
 [tool.setuptools.package-data]
-tradelens = ["py.typed", "modules/analysis/*.html"]
+tradelens = ["py.typed", "modules/analysis/*.html", "modules/notifications/templates/*.txt"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -53,7 +53,8 @@ layers = [
   "(scanner)",
   "(analysis) | (customization)",
   "(billing)",
-  "(accounts) | (market_data) | (realtime) | (notifications)",
+  "(accounts) | (market_data) | (realtime)",
+  "(notifications)",
 ]
 
 [[tool.importlinter.contracts]]

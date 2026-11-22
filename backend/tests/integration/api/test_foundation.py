@@ -120,7 +120,7 @@ def test_login_rate_limit_6th_429(db, api):
     assert 1 <= int(codes[-1].headers["Retry-After"]) <= 60
 
 
-def test_me_returns_profile_plan_and_is_get_only(db, api):
+def test_me_returns_profile_and_plan(db, api):
     app, _, _ = api
     email, _ = new_user(db, plan="pro_monthly")
     c = sign_in(app, email)
@@ -130,7 +130,7 @@ def test_me_returns_profile_plan_and_is_get_only(db, api):
     assert body["subscription"]["status"] == "active"
     assert body["entitlements"]["mtf_detail"] == "full"
     assert body["unread_notifications"] == 0
-    assert c.patch("/api/v1/me", json={"name": "x"}).status_code == 405
+    assert c.put("/api/v1/me", json={"name": "x"}).status_code == 405  # PATCH since task 3.2
 
 
 def test_api_rate_limit_120_per_minute(db, api):

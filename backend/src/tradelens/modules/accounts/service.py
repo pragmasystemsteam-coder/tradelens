@@ -1,14 +1,16 @@
-"""Accounts: users, sign-in and sessions (DD 2.1, 4.1; FR-ACC-02, FR-ACC-05).
+"""Accounts: users, sign-in, sessions, sign-up and recovery (DD 2.1, 4.1, 4.2, 4.6; FR-ACC-01..06).
 
-``create-user`` makes operator accounts; sign-in, sessions and logout arrive in task 2.4;
-sign-up, verification and password reset in Increment 3. Session cookies hold a random
-value; only its HMAC is stored (``core.security``).
+``create-user`` makes operator accounts; sign-in, sessions and logout arrived in task 2.4;
+sign-up, verification, password reset, profile and deletion in task 3.2. E-mailed tokens are
+256-bit random values; only their SHA-256 is stored, and each works once. Session cookies hold
+a random value; only its HMAC is stored (``core.security``).
 """
 
 from __future__ import annotations
 
+import hashlib
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -17,9 +19,11 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from sqlalchemy import Connection
 
+from tradelens.core.deps import AccountBilling
 from tradelens.core.errors import ApiError, not_authenticated, session_ended
 from tradelens.core.security import new_session_token, session_id
 from tradelens.modules.accounts import repository
+from tradelens.modules.notifications.public import queue_email
 
 ROLES = ("customer", "support", "admin")
 EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -165,3 +169,193 @@ def resolve_session(
 def logout(conn: Connection, sid: str, now: datetime) -> None:
     """Revoke one session."""
     repository.revoke_sessions(conn, [sid], now)
+
+
+# ---------------------------------------------------------------- sign-up and recovery (task 3.2)
+VERIFY, RESET = "verify", "reset"
+ACTIVE_PLAN_MESSAGE = "Your paid plan is active. Confirm cancelling it to delete your account."
+StartTrial = Callable[[Connection, str, str, datetime], bool]
+
+
+@dataclass(frozen=True, slots=True)
+class LinkRules:
+    """Where e-mailed links point and how long they work (DD 6.1)."""
+
+    app_url: str
+    verify_ttl: timedelta = timedelta(hours=24)
+    reset_ttl: timedelta = timedelta(hours=1)
+
+
+def token_hash(token: str) -> str:
+    """SHA-256 hex of an e-mailed token (only the hash is stored)."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _issue(conn: Connection, user_id: str, purpose: str, ttl: timedelta, now: datetime) -> str:
+    """A fresh one-time token; older unused tokens of the purpose stop working."""
+    repository.retire_tokens(conn, user_id, purpose, now)
+    token = new_session_token()
+    repository.insert_token(conn, token_hash(token), user_id, purpose, now + ttl)
+    return token
+
+
+def verification_link(conn: Connection, links: LinkRules, user_id: str, now: datetime) -> str:
+    """Issue a verification token and return its link (24 h)."""
+    token = _issue(conn, user_id, VERIFY, links.verify_ttl, now)
+    return f"{links.app_url}/verify-email?token={token}"
+
+
+def _send_verification(
+    conn: Connection, links: LinkRules, user_id: str, email: str, now: datetime
+) -> None:
+    link = verification_link(conn, links, user_id, now)
+    hours = int(links.verify_ttl.total_seconds() // 3600)
+    queue_email(conn, "verify", email, {"link": link, "ttl_hours": hours}, user_id=user_id)
+
+
+def register(
+    conn: Connection, links: LinkRules, email: str, password: str, now: datetime, *,
+    name: str = "", timezone: str = "UTC", trading_style: str = "intraday",
+) -> None:  # fmt: skip
+    """Create an unverified customer and e-mail the verification link (FR-ACC-01).
+
+    An e-mail that already has an account gets an "already registered" mail instead, and the
+    caller answers the same 202 either way (no account enumeration). The password is hashed
+    first in both cases, so the answer takes the same time.
+    """
+    password_hash = _hasher.hash(password)
+    uid = repository.insert_customer(conn, email, password_hash, name, timezone, trading_style)
+    if uid is None:
+        existing = repository.find_user_by_email(conn, email)
+        payload = {"login_link": f"{links.app_url}/login",
+                   "reset_link": f"{links.app_url}/forgot-password"}  # fmt: skip
+        queue_email(conn, "already_registered", email, payload,
+                    user_id=None if existing is None else str(existing["id"]))  # fmt: skip
+        return
+    _send_verification(conn, links, uid, email, now)
+
+
+def resend_verification(conn: Connection, links: LinkRules, email: str, now: datetime) -> None:
+    """A new verification link for an unverified account; nothing otherwise (same answer)."""
+    user = repository.find_user_by_email(conn, email)
+    if user is not None and user["email_verified_at"] is None:
+        _send_verification(conn, links, str(user["id"]), str(user["email"]), now)
+
+
+def dev_verification_link(
+    conn: Connection, links: LinkRules, email: str, now: datetime
+) -> str | None:
+    """Development only: a fresh link for an unverified account (the router checks APP_ENV)."""
+    user = repository.find_user_by_email(conn, email)
+    if user is None or user["email_verified_at"] is not None:
+        return None
+    return verification_link(conn, links, str(user["id"]), now)
+
+
+def token_invalid() -> ApiError:
+    """400 ``token_invalid``: unknown, used or expired link."""
+    return ApiError(400, "token_invalid", "This link has expired or was already used")
+
+
+def _verified(conn: Connection, user: Mapping[str, Any], now: datetime, trial: StartTrial) -> bool:
+    """Mark the e-mail verified; the first time also starts the trial. Returns trial started."""
+    uid = str(user["id"])
+    if not repository.mark_verified(conn, uid, now):
+        return False
+    return trial(conn, uid, str(user["email"]), now)
+
+
+def verify_email(
+    conn: Connection, token: str, now: datetime, trial: StartTrial
+) -> tuple[str, bool]:
+    """Spend a verification token (DD 4.2 ``/auth/verify``).
+
+    Returns:
+        The user ID and whether the 15-day trial started.
+
+    Raises:
+        ApiError: 400 ``token_invalid``.
+    """
+    uid = repository.use_token(conn, token_hash(token), VERIFY, now)
+    user = None if uid is None else repository.find_user_by_id(conn, uid)
+    if user is None:
+        raise token_invalid()
+    return str(user["id"]), _verified(conn, user, now, trial)
+
+
+def forgot_password(conn: Connection, links: LinkRules, email: str, now: datetime) -> None:
+    """E-mail a reset link (1 h) to a live account; nothing otherwise (FR-ACC-03)."""
+    user = repository.find_user_by_email(conn, email)
+    if user is None:
+        return
+    uid = str(user["id"])
+    token = _issue(conn, uid, RESET, links.reset_ttl, now)
+    minutes = int(links.reset_ttl.total_seconds() // 60)
+    queue_email(conn, "reset", str(user["email"]),
+                {"link": f"{links.app_url}/reset-password?token={token}", "ttl_minutes": minutes},
+                user_id=uid)  # fmt: skip
+
+
+def reset_password(
+    conn: Connection, token: str, new_password: str, now: datetime, trial: StartTrial
+) -> tuple[str, tuple[str, ...]]:
+    """Set a new password with a reset token and revoke every session (DD 4.2).
+
+    Opening the link proves the inbox, so an unverified e-mail becomes verified (and starts the
+    trial the first time).
+
+    Returns:
+        The user ID and the revoked session IDs.
+
+    Raises:
+        ApiError: 400 ``token_invalid``.
+    """
+    uid = repository.use_token(conn, token_hash(token), RESET, now)
+    user = None if uid is None else repository.find_user_by_id(conn, uid)
+    if user is None:
+        raise token_invalid()
+    uid = str(user["id"])
+    repository.lock_user(conn, uid)
+    repository.set_password(conn, uid, _hasher.hash(new_password))
+    repository.retire_tokens(conn, uid, RESET, now)
+    revoked = repository.revoke_all_sessions(conn, uid, now)
+    _verified(conn, user, now, trial)
+    return uid, tuple(revoked)
+
+
+def update_profile(conn: Connection, user_id: str, fields: Mapping[str, Any]) -> dict[str, Any]:
+    """Save name, timezone, trading style or billing country (FR-ACC-04); returns the user."""
+    repository.update_profile(conn, user_id, dict(fields))
+    user = repository.find_user_by_id(conn, user_id)
+    if user is None:
+        raise not_authenticated()
+    return public_user(user)
+
+
+def delete_account(
+    conn: Connection, user_id: str, password: str, cancel_subscription: bool, now: datetime,
+    billing: AccountBilling,
+) -> tuple[str, ...]:  # fmt: skip
+    """Delete a customer's account (FR-ACC-06, DD 4.6).
+
+    Raises:
+        ApiError: 403 ``forbidden`` for staff, 403 ``invalid_credentials`` on a wrong password,
+            409 ``subscription_active`` when a paid plan is live and not confirmed cancelled.
+
+    Returns:
+        The IDs of the sessions that were live (their streams are told the session ended).
+    """
+    repository.lock_user(conn, user_id)
+    user = repository.find_user_by_id(conn, user_id)
+    if user is None:
+        raise not_authenticated()
+    if user["role"] != "customer":
+        raise ApiError(403, "forbidden", "Staff accounts are removed by an admin")
+    if not _password_ok(user["password_hash"], password):
+        raise ApiError(403, "invalid_credentials", "Password is incorrect")
+    if billing.paid_subscription_live(conn, user_id, now) and not cancel_subscription:
+        raise ApiError(409, "subscription_active", ACTIVE_PLAN_MESSAGE)
+    billing.end_subscriptions(conn, user_id, now)
+    revoked = repository.revoke_all_sessions(conn, user_id, now)
+    repository.purge_user(conn, user_id, now)
+    return tuple(revoked)

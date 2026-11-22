@@ -1,5 +1,6 @@
 """Public interface of market_data for other modules and the CLI (ADR-0001 section 4)."""
 
+from tradelens.modules.market_data.aggregate import FormingCandle, forming_candle
 from tradelens.modules.market_data.calendar import Calendar
 from tradelens.modules.market_data.candle_store import (
     SqlCandleStore,
@@ -22,6 +23,7 @@ from tradelens.modules.market_data.service import (
 __all__ = [
     "TIMEFRAMES",
     "Calendar",
+    "FormingCandle",
     "IngestService",
     "InstrumentReport",
     "InstrumentSpec",
@@ -31,6 +33,7 @@ __all__ = [
     "SqlCandleStore",
     "StoredCandle",
     "build_reference_rows",
+    "forming_candle",
     "instrument_rows",
     "latest_closes",
     "load_instrument_specs",

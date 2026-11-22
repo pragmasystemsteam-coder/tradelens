@@ -41,6 +41,7 @@ class ScannerQuery:
     direction: str | None = None
     instruments: frozenset[str] = frozenset()
     patterns: frozenset[str] = frozenset()
+    match: str = "any"  # CR-006: "any" (at least one pattern) or "all" (every pattern)
     sessions: frozenset[str] = frozenset()
     min_score: int | None = None
     asset_class: str | None = None
@@ -63,8 +64,10 @@ def matches(row: Mapping[str, Any], q: ScannerQuery, limits: Limits) -> bool:
         return False
     if q.asset_class and row["asset_class"] != q.asset_class:
         return False
-    if q.patterns and not q.patterns & set(row["patterns"]):
-        return False
+    if q.patterns:
+        have = set(row["patterns"])
+        if (q.match == "all" and not q.patterns <= have) or not q.patterns & have:
+            return False
     if q.sessions and not q.sessions & set(row["sessions"]):
         return False
     return q.min_score is None or row["combined"] >= q.min_score

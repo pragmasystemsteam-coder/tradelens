@@ -141,6 +141,17 @@ export interface ChartPayload {
     swings: { type: string; structure: string; price: number; origin_time: string }[];
   };
   live_price: { bid: number; ask: number; mid: number; time: string; stale: boolean } | null;
+  /** The current, unfinished candle: display only, never used for setups. */
+  forming: FormingCandle | null;
+}
+
+export interface FormingCandle {
+  t: string;
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+  closes_at: string;
 }
 
 export interface Instrument {
@@ -171,4 +182,85 @@ export interface WatchlistItem {
     direction: Direction;
     combined: number;
   } | null;
+}
+
+/** GET /analysis/{instrument}/{tf} (CR-006). Candidates are display only, never setups. */
+export interface AnalysisCandidate {
+  kind: "candidate";
+  label: string;
+  direction: Direction;
+  break: { id: string; type: string; level: number | null; confirm_time: string };
+  displacement_id: string | null;
+  sweep_id: string | null;
+  zone: {
+    id: string;
+    kind: string;
+    low: number;
+    high: number;
+    state: string;
+    nearby: boolean;
+  } | null;
+  checks: { code: "break" | "displacement" | "zone_in_move"; met: boolean }[];
+  patterns: string[];
+  factors: {
+    code: string;
+    score: "Q" | "C";
+    max: number;
+    points: number | null;
+    locked: boolean;
+  }[];
+  q: number;
+  c: number | null;
+  combined: number;
+  counter_trend: boolean;
+}
+
+export interface AnalysisPayload {
+  instrument: string;
+  timeframe: string;
+  price_scale: number;
+  as_of: string;
+  recent_bars: number;
+  candidate_bars: number;
+  trend_strip: ChartPayload["trend_strip"];
+  structure: {
+    id: string;
+    type: string;
+    structure: string | null;
+    direction: Direction | null;
+    level: number | null;
+    origin_time: string;
+    confirm_time: string;
+  }[];
+  zones: {
+    id: string;
+    kind: string;
+    direction: Direction;
+    low: number;
+    high: number;
+    state: string;
+    confirm_time: string;
+  }[];
+  liquidity: { id: string; kinds: string[]; side: string; price: number }[];
+  setups: {
+    id: string;
+    direction: Direction;
+    combined: number;
+    q: number;
+    c: number | null;
+    status: string;
+    counter_trend: boolean;
+    patterns: string[];
+    break_event_id: string;
+    confirm_time: string;
+  }[];
+  pattern_counts: Record<string, number>;
+  candidates: AnalysisCandidate[];
+}
+
+/** What the chart shows when patterns are chosen in the scanner (CR-006). */
+export interface PatternFilter {
+  patterns: string[];
+  match: "any" | "all";
+  others: "fade" | "hide";
 }
