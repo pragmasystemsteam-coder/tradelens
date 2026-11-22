@@ -53,6 +53,7 @@ def list_setups(
     timeframe: Timeframe | None = None,
     direction: Literal["bull", "bear"] | None = None,
     pattern: Annotated[list[Pattern] | None, Query()] = None,
+    match: Literal["any", "all"] = "any",
     session: Annotated[list[Session] | None, Query()] = None,
     min_score: Annotated[int | None, Query(ge=0, le=100)] = None,
     asset_class: Literal["forex", "metal", "energy"] | None = None,
@@ -69,7 +70,8 @@ def list_setups(
     """
     q = ScannerQuery(timeframe=timeframe or STYLE_TF.get(viewer.trading_style, "1h"),
                      direction=direction, instruments=frozenset(instrument or ()),
-                     patterns=frozenset(pattern or ()), sessions=frozenset(session or ()),
+                     patterns=frozenset(pattern or ()), match=match,
+                     sessions=frozenset(session or ()),
                      min_score=min_score, asset_class=asset_class, limit=limit,
                      cursor=cursor)  # fmt: skip
     cached = _cached(redis, q)

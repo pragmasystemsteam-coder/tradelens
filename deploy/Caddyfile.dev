@@ -1,0 +1,39 @@
+# Local development proxy (deploy/docker-compose.dev.yml): http://localhost:3000 on this PC.
+# Same routes as the app host in deploy/Caddyfile, without TLS, Cloudflare or other hosts.
+{
+	admin off
+	auto_https off
+}
+
+# Container health check only (not published).
+:8080 {
+	respond /healthz "ok" 200
+}
+
+:80 {
+	request_body {
+		max_size 2MB
+	}
+	@compressible not path /api/v1/stream*
+	encode @compressible gzip
+	handle /api/admin/* {
+		respond 404
+	}
+	handle /api/v1/stream* {
+		reverse_proxy api:8000 {
+			flush_interval -1
+			header_up X-Forwarded-For {client_ip}
+		}
+	}
+	handle /api/* {
+		reverse_proxy api:8000 {
+			header_up X-Forwarded-For {client_ip}
+		}
+	}
+	handle /healthz* {
+		reverse_proxy api:8000
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+}

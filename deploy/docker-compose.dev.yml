@@ -1,0 +1,76 @@
+# Local development on this PC, layered over the production file. One command from the
+# repository root (Docker Desktop running):
+#
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml --env-file deploy/.env up --build
+#
+# Then open http://localhost:3000. A one-time "setup" step migrates and seeds the database and
+# creates two demo users (free@demo.test and pro@demo.test); their password is DEV_DEMO_PASSWORD
+# from deploy/.env, or one generated and printed once in the setup log on the first start.
+# Stop with Ctrl+C (or "... down"); data stays in the Docker volumes ("... down -v" wipes it).
+# Market data: MARKET_DATA_PROVIDER in deploy/.env (fake = test data for all 11 instruments;
+# twelvedata = real EUR/USD and gold with your key, test data for the rest).
+# Never use this file on the server: it turns off HTTPS and sets APP_ENV=development.
+
+x-dev-backend: &dev-backend
+  APP_ENV: development
+  APP_URL: http://localhost:3000
+  # Mail is logged by the worker ("docker compose ... logs worker"), never sent, and the
+  # "Check your email" page offers a development-only button that opens the link.
+  EMAIL_TRANSPORT: console
+
+services:
+  setup:
+    build: {context: .., dockerfile: deploy/Dockerfile.backend}
+    image: tradelens-backend:latest
+    restart: "no"
+    command:
+      - sh
+      - -c
+      - >-
+        python -m alembic -c alembic.ini upgrade head &&
+        python -m tradelens.cli seed /app/config &&
+        for spec in "free@demo.test free" "pro@demo.test pro_monthly"; do
+        set -- $$spec;
+        python -m tradelens.cli create-user "$$1" customer "$$2" 2>/dev/null ||
+        echo "setup: $$1 already exists (password as set before)";
+        done
+    environment:
+      APP_ENV: development
+      CONFIG_DIR: /app/config
+      DATABASE_MIGRATION_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      CREATE_USER_PASSWORD: ${DEV_DEMO_PASSWORD:-}
+    volumes:
+      - ../config:/app/config:ro
+    depends_on:
+      postgres: {condition: service_healthy}
+    networks: [backend]
+
+  proxy:
+    ports: !override
+      - "127.0.0.1:3000:80"
+    volumes: !override
+      - ./Caddyfile.dev:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: !override
+      web: {condition: service_healthy}
+      api: {condition: service_healthy}
+
+  web:
+    environment:
+      APP_ENV: development  # shows the "Dev: open the verification link" button
+
+  admin-web:
+    profiles: ["admin"]  # the admin app arrives in Increment 3
+
+  api:
+    environment:
+      <<: *dev-backend
+    depends_on:
+      setup: {condition: service_completed_successfully}
+
+  worker:
+    environment:
+      <<: *dev-backend
+    depends_on:
+      setup: {condition: service_completed_successfully}

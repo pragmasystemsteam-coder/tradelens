@@ -10,9 +10,11 @@ from fake_redis import AsyncFakeRedis, FakeRedis
 from tradelens.core.errors import ApiError
 from tradelens.core.limits import DEFAULTS, Limits
 from tradelens.modules.realtime.service import (
+    SLOT_STALE_SECONDS,
     StreamSpec,
     acquire_stream,
     event_stream,
+    keep_stream,
     parse_topics,
     release_stream,
 )
@@ -187,14 +189,50 @@ def test_heartbeat_25s():
 def test_max_6_streams():
     async def go():
         aredis = AsyncFakeRedis(FakeRedis())
-        for _ in range(6):
-            await acquire_stream(aredis, "u1", 6)
+        slots = [await acquire_stream(aredis, "u1", 6) for _ in range(6)]
         with pytest.raises(ApiError) as err:
             await acquire_stream(aredis, "u1", 6)
         assert err.value.status == 429 and err.value.code == "rate_limited"
-        await release_stream(aredis, "u1")
+        await release_stream(aredis, "u1", slots[0])
         await acquire_stream(aredis, "u1", 6)  # a closed stream frees its slot
-        assert await aredis.get("sse:u1") == "6"
+        assert await aredis.zcard("sse:slots:u1") == 6
+
+    run(go())
+
+
+class Tick:
+    def __init__(self, t=1_000_000.0):
+        self.t = t
+
+    def __call__(self):
+        return self.t
+
+
+def test_streams_lost_in_a_restart_free_their_slots():
+    """A process that dies never releases; its slots lapse after SLOT_STALE_SECONDS."""
+
+    async def go():
+        clock = Tick()
+        aredis = AsyncFakeRedis(FakeRedis(clock))
+        for _ in range(6):
+            await acquire_stream(aredis, "u1", 6, now=clock)
+        clock.t += SLOT_STALE_SECONDS + 1  # no pings: the API was restarted
+        await acquire_stream(aredis, "u1", 6, now=clock)
+        assert await aredis.zcard("sse:slots:u1") == 1
+
+    run(go())
+
+
+def test_open_stream_keeps_its_slot_with_pings():
+    async def go():
+        clock = Tick()
+        aredis = AsyncFakeRedis(FakeRedis(clock))
+        slot = await acquire_stream(aredis, "u1", 1, now=clock)
+        for _ in range(10):  # 10 pings, far past the stale limit in total
+            clock.t += 25
+            await keep_stream(aredis, "u1", slot, now=clock)
+        with pytest.raises(ApiError):
+            await acquire_stream(aredis, "u1", 1, now=clock)
 
     run(go())
 

@@ -1,0 +1,11 @@
+Subject: Reset your TradeLens password
+
+Someone asked to reset the password of your TradeLens account.
+
+Open this link to choose a new password. It works once and expires in $ttl_minutes minutes:
+
+$link
+
+Resetting signs you out on every device. If you did not ask for this, ignore this email; your password stays the same.
+
+TradeLens - analytics only. TradeLens does not place trades or give investment advice.

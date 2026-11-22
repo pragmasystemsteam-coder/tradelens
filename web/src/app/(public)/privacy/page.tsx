@@ -1,3 +1,4 @@
+import { PublicHeader } from "@/components/layout/PublicHeader";
 import { Footer } from "@/components/ui/Footer";
 
 export const metadata = { title: "Privacy policy · TradeLens" };
@@ -6,9 +7,12 @@ export const metadata = { title: "Privacy policy · TradeLens" };
 export default function Page() {
   return (
     <>
-      <main className="public-main">
-        <h1>Privacy policy</h1>
-        <p>The full policy is published with the public site.</p>
+      <PublicHeader />
+      <main className="public-main" id="main">
+        <article className="prose">
+          <h1>Privacy policy</h1>
+          <p className="muted">The full policy is published with the public site.</p>
+        </article>
       </main>
       <Footer />
     </>

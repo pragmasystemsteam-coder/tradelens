@@ -10,10 +10,11 @@ task 2.4). ``null`` for a count means unlimited.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from redis.exceptions import RedisError
@@ -340,6 +341,46 @@ def cached_entitlements(
 def invalidate_entitlements(cache: Any, user_id: str) -> None:  # noqa: ANN401
     """Drop the cached limits after any plan, trial or subscription change (DD 4.1)."""
     cache.delete(f"ent:{user_id}")
+
+
+# ---------------------------------------------------------------- trial and deletion (task 3.2)
+def email_hash(email: str) -> str:
+    """SHA-256 hex of the trimmed, lower-cased e-mail (``trial_claims.email_hash``)."""
+    return hashlib.sha256(email.strip().lower().encode("utf-8")).hexdigest()
+
+
+def start_trial(conn: Connection, user_id: str, email: str, now: datetime) -> bool:
+    """Start the trial plan for ``trial_days`` days, once per e-mail ever (DD 4.3, 4.6).
+
+    The trial plan is the active plan with ``trial_days > 0`` (never a code). Nothing is
+    claimed when there is no trial plan or the user already has a live subscription, so a
+    later verification can still use the claim. The claim row survives account deletion.
+
+    Returns:
+        True when the trial started.
+    """
+    plan = repository.fetch_trial_plan(conn)
+    if plan is None or repository.fetch_open_subscription(conn, user_id) is not None:
+        return False
+    if not repository.claim_trial(conn, email_hash(email), user_id, now):
+        return False
+    ends = now + timedelta(days=int(plan["trial_days"]))
+    repository.insert_trial_subscription(conn, user_id, str(plan["code"]), now, ends)
+    return True
+
+
+def paid_subscription_live(conn: Connection, user_id: str, now: datetime) -> bool:
+    """Whether a paid (or manual) plan still grants access: deletion needs it cancelled first."""
+    return _grants(repository.fetch_live_subscription(conn, user_id), now) == "paid"
+
+
+def end_subscriptions(conn: Connection, user_id: str, now: datetime) -> None:
+    """End every open subscription now, for account deletion (no refund; rows are kept).
+
+    Paid ones become ``cancelled`` with the period ending now; a trial or open checkout
+    becomes ``expired``. Cancelling at Razorpay arrives with checkout (task 3.3).
+    """
+    repository.end_open_subscriptions(conn, user_id, now)
 
 
 def account_summary(conn: Connection, user_id: str, limits: Limits) -> dict[str, Any]:

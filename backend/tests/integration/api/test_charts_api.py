@@ -3,7 +3,7 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from api_support import make_app, new_user, sign_in
+from api_support import Clock, make_app, new_user, sign_in
 from seed_api import hexid, official_hash, rule_doc, set_status
 from sqlalchemy import text
 
@@ -12,6 +12,7 @@ from tradelens.modules.analysis.output_store import SqlAnalysisStore
 from tradelens.modules.analysis.process import to_engine
 from tradelens.modules.analysis.public import CloseBatch, official_settings
 from tradelens.modules.market_data.candles import to_stored
+from tradelens.modules.market_data.ports import RawBar
 from tradelens.modules.market_data.public import SqlCandleStore, load_instrument_specs
 from tradelens_engine.multi import step_batch
 
@@ -19,7 +20,7 @@ pytestmark = pytest.mark.integration
 END = datetime(2026, 11, 13, 21, 0, tzinfo=UTC)
 KEYS = {"instrument", "timeframe", "price_scale", "settings", "status", "candles", "has_more",
         "events", "zones", "htf_zones", "liquidity", "setups", "trend_strip", "provisional",
-        "live_price"}  # fmt: skip
+        "live_price", "forming"}  # fmt: skip
 
 
 @pytest.fixture(scope="module")
@@ -174,3 +175,61 @@ def test_include_inactive_and_errors(free):
     assert r.status_code == 400
     r = free.get("/api/v1/charts/EUR_USD/1h", params={"profile_version_id": hexid()})
     assert r.status_code == 403 and r.json()["error"]["details"]["limit_key"] == "custom_settings"
+
+
+def test_forming_candle_from_5m_display_only(db, data):
+    """The open 1H period is built from its finished 5m candles; 5m and delayed data get none."""
+    with db.begin() as conn:
+        SqlCandleStore(conn).add([
+            to_stored(RawBar(END + timedelta(minutes=5 * i), *ohlc), "EUR_USD", "5m", "synthetic")
+            for i, ohlc in enumerate([(108000, 108050, 107990, 108020),
+                                      (108020, 108090, 108010, 108080)])
+        ])  # fmt: skip
+    app, _, _ = make_app(db, clock=Clock(END + timedelta(minutes=12)))
+    email, _ = new_user(db)
+    client = sign_in(app, email)
+    body = client.get("/api/v1/charts/EUR_USD/1h").json()
+    assert body["forming"] == {
+        "t": "2026-11-13T21:00:00Z",
+        "o": 108000,
+        "h": 108090,
+        "l": 107990,
+        "c": 108080,
+        "closes_at": "2026-11-13T22:00:00Z",
+    }
+    assert body["candles"][-1]["t"] == "2026-11-13T20:00:00Z"  # finished candles unchanged
+    assert client.get("/api/v1/charts/EUR_USD/5m").json()["forming"] is None
+    older = client.get("/api/v1/charts/EUR_USD/1h", params={"before": "2026-11-12T00:00:00Z"})
+    assert older.json()["forming"] is None
+    with db.begin() as conn:
+        set_status(conn, "EUR_USD", "delayed", END)
+    try:
+        assert client.get("/api/v1/charts/EUR_USD/1h").json()["forming"] is None
+    finally:
+        with db.begin() as conn:
+            set_status(conn, "EUR_USD", "ok", END)
+
+
+def test_analysis_lists_everything_and_never_stores_candidates(db, data):
+    """CR-006: computed on request; candidates are labelled and never written."""
+    app, _, _ = make_app(db, clock=Clock(END))
+    email, _ = new_user(db)
+    client = sign_in(app, email)
+    with db.connect() as conn:
+        before = conn.execute(text("SELECT count(*) FROM setups")).scalar_one()
+    r = client.get("/api/v1/analysis/EUR_USD/1h")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert {"trend_strip", "structure", "zones", "liquidity", "setups", "pattern_counts",
+            "candidates"} <= set(body)  # fmt: skip
+    assert len(body["trend_strip"]) == 5
+    assert set(body["pattern_counts"]) == {"bos", "choch", "sweep", "fvg", "ob", "displacement"}
+    assert body["structure"], "the engine output has recent structure events"
+    for cand in body["candidates"]:
+        assert cand["label"] == "Candidate, not a setup"
+        assert {k["code"] for k in cand["checks"]} == {"break", "displacement", "zone_in_move"}
+        assert all(f["locked"] for f in cand["factors"] if f["score"] == "C")  # Free
+    with db.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM setups")).scalar_one() == before
+    assert client.get("/api/v1/analysis/XAU_USD/1h").status_code == 403
+    assert client.get("/api/v1/analysis/NOPE_X/1h").status_code == 404

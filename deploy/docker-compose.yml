@@ -19,6 +19,8 @@ x-backend-env: &backend-env
   HEARTBEAT_INTERVAL_SECONDS: ${HEARTBEAT_INTERVAL_SECONDS}
   HEARTBEAT_TTL_SECONDS: ${HEARTBEAT_TTL_SECONDS}
   PRICE_STALE_AFTER_SECONDS: ${PRICE_STALE_AFTER_SECONDS}
+  APP_URL: ${APP_URL}
+  EMAIL_TRANSPORT: ${EMAIL_TRANSPORT}
   SMTP_HOST: ${SMTP_HOST}
   SMTP_PORT: ${SMTP_PORT}
   SMTP_STARTTLS: ${SMTP_STARTTLS}
@@ -65,7 +67,7 @@ services:
         limits: {memory: 256M, cpus: "1"}
 
   web:
-    build: {context: ../web}
+    build: {context: ../web, additional_contexts: {config: ../config}}
     restart: unless-stopped
     environment:
       API_INTERNAL_URL: ${API_INTERNAL_URL}

@@ -80,6 +80,9 @@ class AppConfig:
     sse_price_throttle_ms: int = 500
     sse_ping_seconds: int = 25
     price_stale_after_seconds: int = 60
+    email_verify_ttl_hours: int = 24
+    password_reset_ttl_minutes: int = 60
+    rate_anon_ip: int = 5
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> AppConfig:
@@ -123,4 +126,7 @@ class AppConfig:
             sse_max_streams=env_int(source, "SSE_MAX_STREAMS_PER_USER", 6),
             sse_price_throttle_ms=env_int(source, "SSE_PRICE_THROTTLE_MS", 500),
             price_stale_after_seconds=env_int(source, "PRICE_STALE_AFTER_SECONDS", 60),
+            email_verify_ttl_hours=env_int(source, "EMAIL_VERIFY_TTL_HOURS", 24),
+            password_reset_ttl_minutes=env_int(source, "PASSWORD_RESET_TTL_MINUTES", 60),
+            rate_anon_ip=env_int(source, "RATE_LIMIT_ANON_PER_IP_PER_MIN", 5),
         )

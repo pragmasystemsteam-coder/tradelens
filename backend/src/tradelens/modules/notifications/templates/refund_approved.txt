@@ -1,0 +1,7 @@
+Subject: Your refund was approved
+
+Your refund of $amount (reference $reference) was approved.
+
+The money reaches your original payment method within 5 to 7 working days. We email you again when it is sent.
+
+TradeLens

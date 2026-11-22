@@ -1,12 +1,13 @@
 """Worker entry point: ``python -m tradelens.worker.main``.
 
-Runs the heartbeat (main thread, every 5 s) and, when ``DATABASE_URL`` is set, three
-background threads (DD 8.1 task 1.9):
+Runs the heartbeat (main thread, every 5 s) and, when ``DATABASE_URL`` is set, four
+background threads (DD 8.1 task 1.9, 8.3 task 3.1):
 
 * close: ingest, engine processing and live messages at every 5-minute boundary + 2 s;
 * prices: price ticks into ``price:{instrument}`` / ``prices:{instrument}`` (CR-004: from the
   newest stored 5m candle, as the Twelve Data FREE plan has no price stream);
-* stale watch: marks a price stale after ``PRICE_STALE_AFTER_SECONDS`` without a tick.
+* stale watch: marks a price stale after ``PRICE_STALE_AFTER_SECONDS`` without a tick;
+* mailer: sends the e-mail outbox through ``EMAIL_TRANSPORT`` (smtp, or console in development).
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from pathlib import Path
 from types import FrameType
 from typing import Any
@@ -31,6 +33,7 @@ from tradelens.core.config import AppConfig, env_int
 from tradelens.core.db import get_engine
 from tradelens.core.logging import configure_logging
 from tradelens.core.redis import create_redis
+from tradelens.integrations.email import build_email_transport
 from tradelens.integrations.providers import build_candle_provider
 from tradelens.modules.analysis.public import (
     CloseProcessor,
@@ -48,6 +51,7 @@ from tradelens.modules.market_data.public import (
 from tradelens.worker.heartbeat import HeartbeatStore, beat
 from tradelens.worker.jobs.close import CloseJob, run_close_loop
 from tradelens.worker.jobs.ingest import run_ingest_once
+from tradelens.worker.mailer import run_mailer
 from tradelens.worker.prices import (
     PriceBook,
     candle_close_ticks,
@@ -64,6 +68,7 @@ DEFAULT_THROTTLE_MS = 500
 DEFAULT_STALE_SECONDS = 10
 CANDLE_PRICE_STALE_SECONDS = 420  # one 5m candle + 60 s grace, rounded up
 SHUTDOWN_JOIN_SECONDS = 20
+DEFAULT_EMAIL_ATTEMPTS = 5
 
 logger = logging.getLogger(__name__)
 
@@ -173,6 +178,9 @@ def start_pipeline(
         logger.warning("DATABASE_URL not set: ingestion and processing are off")
         return []
     engine = get_engine(database_url)
+    transport = build_email_transport(env)  # console outside development refuses to start
+    max_attempts = env_int(env, "EMAIL_OUTBOX_MAX_ATTEMPTS", DEFAULT_EMAIL_ATTEMPTS)
+    mailer = partial(run_mailer, max_attempts=max_attempts)
     job = build_close_job(env, engine, publisher)
     specs = load_instrument_specs(Path(env.get("CONFIG_DIR", DEFAULT_CONFIG_DIR)))
     book = PriceBook(
@@ -196,6 +204,7 @@ def start_pipeline(
             stop,
         ),
         _thread("stale-watch", run_stale_watch, book, stop),
+        _thread("mailer", mailer, engine, transport, utc_now, stop),
     ]
     logger.info("worker pipeline started", extra={"provider": env.get("MARKET_DATA_PROVIDER")})
     return threads

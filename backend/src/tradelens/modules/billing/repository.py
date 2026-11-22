@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import Connection, text
@@ -110,3 +111,64 @@ def fetch_live_subscription(conn: Connection, user_id: str) -> dict[str, Any] | 
     """The newest trialing, active, grace or cancelled subscription of a user, if any."""
     row = conn.execute(SELECT_LIVE_SUBSCRIPTION, {"user_id": user_id}).mappings().first()
     return None if row is None else dict(row)
+
+
+# ---------------------------------------------------------------- trial and deletion (task 3.2)
+SELECT_TRIAL_PLAN = text(
+    "SELECT code, trial_days FROM plans WHERE trial_days > 0 AND active LIMIT 1"
+)
+SELECT_OPEN_SUBSCRIPTION = text(
+    "SELECT id FROM subscriptions WHERE user_id = :user_id"
+    " AND status IN ('created', 'trialing', 'active', 'grace') LIMIT 1"
+)
+CLAIM_TRIAL = text(
+    "INSERT INTO trial_claims (email_hash, user_id, claimed_at) VALUES (:hash, :user_id, :now)"
+    " ON CONFLICT (email_hash) DO NOTHING RETURNING email_hash"
+)
+INSERT_TRIAL = text(
+    "INSERT INTO subscriptions (user_id, plan_code, source, status, trial_ends_at, created_at,"
+    " updated_at) VALUES (:user_id, :plan_code, 'trial', 'trialing', :ends, :now, :now)"
+)
+END_OPEN = text(
+    "UPDATE subscriptions SET"
+    " status = CASE WHEN status IN ('active', 'grace', 'cancelled') THEN 'cancelled'"
+    "   ELSE 'expired' END,"
+    " current_period_end = CASE WHEN status IN ('active', 'grace', 'cancelled')"
+    "   THEN LEAST(COALESCE(current_period_end, :now), :now) ELSE current_period_end END,"
+    " grace_until = LEAST(grace_until, :now), cancel_at_period_end = true,"
+    " ended_at = COALESCE(ended_at, :now), updated_at = :now"
+    " WHERE user_id = :user_id"
+    " AND status IN ('created', 'trialing', 'active', 'grace', 'cancelled')"
+    " AND ended_at IS NULL"
+)
+
+
+def fetch_trial_plan(conn: Connection) -> dict[str, Any] | None:
+    """The active plan a trial grants (``trial_days > 0``), if any."""
+    row = conn.execute(SELECT_TRIAL_PLAN).mappings().first()
+    return None if row is None else dict(row)
+
+
+def fetch_open_subscription(conn: Connection, user_id: str) -> str | None:
+    """ID of a created, trialing, active or grace subscription."""
+    found = conn.execute(SELECT_OPEN_SUBSCRIPTION, {"user_id": user_id}).scalar()
+    return None if found is None else str(found)
+
+
+def claim_trial(conn: Connection, hashed_email: str, user_id: str, now: datetime) -> bool:
+    """Insert the claim; False when this e-mail already had a trial."""
+    params = {"hash": hashed_email, "user_id": user_id, "now": now}
+    return conn.execute(CLAIM_TRIAL, params).first() is not None
+
+
+def insert_trial_subscription(
+    conn: Connection, user_id: str, plan_code: str, now: datetime, ends: datetime
+) -> None:
+    """A ``trialing`` subscription (source ``trial``, no card)."""
+    conn.execute(INSERT_TRIAL, {"user_id": user_id, "plan_code": plan_code, "now": now,
+                                "ends": ends})  # fmt: skip
+
+
+def end_open_subscriptions(conn: Connection, user_id: str, now: datetime) -> None:
+    """Paid rows become cancelled (period ends now); trials and checkouts become expired."""
+    conn.execute(END_OPEN, {"user_id": user_id, "now": now})

@@ -1,0 +1,75 @@
+# Client demo server (Oracle Always Free VM), layered over the production file.
+# From the repository root on the server (guide: docs/DEPLOY_DEMO.md):
+#
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.demo.yml --env-file deploy/.env up --build -d
+#
+# Differences from production: one HTTPS address (DEMO_HOST) with a free Let's Encrypt
+# certificate instead of Cloudflare and three hosts; APP_ENV=staging; a one-time "setup" step
+# that migrates, seeds and creates the demo users free@demo.test and pro@demo.test (password
+# DEV_DEMO_PASSWORD); the admin app stays off until Increment 3. Search engines are asked not to
+# index the demo. Real customers and live payments never run on this file.
+
+x-demo-backend: &demo-backend
+  APP_ENV: staging
+  APP_URL: https://${DEMO_HOST}
+  SITE_HOST: ${DEMO_HOST}
+  APP_HOST: ${DEMO_HOST}
+
+services:
+  setup:
+    build: {context: .., dockerfile: deploy/Dockerfile.backend}
+    image: tradelens-backend:latest
+    restart: "no"
+    command:
+      - sh
+      - -c
+      - >-
+        python -m alembic -c alembic.ini upgrade head &&
+        python -m tradelens.cli seed /app/config &&
+        for spec in "free@demo.test free" "pro@demo.test pro_monthly"; do
+        set -- $$spec;
+        python -m tradelens.cli create-user "$$1" customer "$$2" 2>/dev/null ||
+        echo "setup: $$1 already exists";
+        done
+    environment:
+      APP_ENV: staging
+      CONFIG_DIR: /app/config
+      DATABASE_MIGRATION_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      CREATE_USER_PASSWORD: ${DEV_DEMO_PASSWORD:?set DEV_DEMO_PASSWORD in deploy/.env}
+    volumes:
+      - ../config:/app/config:ro
+    depends_on:
+      postgres: {condition: service_healthy}
+    networks: [backend]
+
+  proxy:
+    environment:
+      DEMO_HOST: ${DEMO_HOST:?set DEMO_HOST in deploy/.env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in deploy/.env}
+    volumes: !override
+      - ./Caddyfile.demo:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: !override
+      web: {condition: service_healthy}
+      api: {condition: service_healthy}
+
+  admin-web:
+    profiles: ["admin"]  # the admin app arrives in Increment 3
+
+  web:
+    environment:
+      APP_URL: https://${DEMO_HOST}
+      SITE_URL: https://${DEMO_HOST}
+
+  api:
+    environment:
+      <<: *demo-backend
+    depends_on:
+      setup: {condition: service_completed_successfully}
+
+  worker:
+    environment:
+      <<: *demo-backend
+    depends_on:
+      setup: {condition: service_completed_successfully}

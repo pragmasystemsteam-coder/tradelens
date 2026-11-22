@@ -37,6 +37,32 @@ Without any make: `py -3.12 -m venv .venv`, then
 `.venv\Scripts\python -m pip install -e engine[dev] -e backend[dev]`, `.venv\Scripts\lint-imports --config backend/pyproject.toml`
 and `.venv\Scripts\python -m pytest`.
 
+## Run the app on this PC (one command)
+
+Start Docker Desktop, then from the repository root:
+
+```bash
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml --env-file deploy/.env up --build -d
+```
+
+Open http://localhost:3000. The first start builds the images (a few minutes); later starts take
+seconds. A one-time `setup` step migrates and seeds the database and creates two demo users,
+`free@demo.test` (Free) and `pro@demo.test` (Pro). Their password is `DEV_DEMO_PASSWORD` from
+`deploy/.env`; if that is empty, a password is generated and shown once in the setup log:
+`docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml --env-file deploy/.env logs setup`.
+
+| Action | Command (same two `-f` files and `--env-file`) |
+| --- | --- |
+| Stop | `... down` (data is kept) |
+| Live logs | `... logs -f api worker` |
+| Start from an empty database | `... down -v`, then `up` again |
+
+Market data comes from `MARKET_DATA_PROVIDER` in `deploy/.env`: `fake` gives test data for all 11
+instruments and uses no credits; `twelvedata` gives real EUR/USD and gold with your key (about 576
+credits a day while running) and test data for the rest. In VS Code the same commands are under
+Terminal → Run Task → "TradeLens: ...". `docker-compose.dev.yml` turns off HTTPS and sets
+`APP_ENV=development`: never use it on the server. For a client demo server see `docs/DEPLOY_DEMO.md`.
+
 ## Running the stack
 
 Needs Docker Desktop (WSL2 backend on Windows) or Docker Engine with Compose v2.

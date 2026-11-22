@@ -32,10 +32,10 @@ def test_development_and_test_may_run_without_secrets():
     create_app(make_config(app_env="test", session_secret="", csrf_secret=""))
 
 
-def test_stream_slot_never_goes_negative():
+def test_releasing_an_unknown_stream_slot_is_harmless():
     async def go():
         aredis = AsyncFakeRedis(FakeRedis())
-        await release_stream(aredis, "u1")  # key expired while streams were open
-        assert int(await aredis.get("sse:u1") or 0) == 0
+        await release_stream(aredis, "u1", "gone")  # the slot already lapsed
+        assert await aredis.zcard("sse:slots:u1") == 0
 
     asyncio.run(go())

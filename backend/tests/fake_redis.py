@@ -74,6 +74,38 @@ class FakeRedis:
     def mget(self, names):
         return [self.get(n) for n in names]
 
+    # ------------------------------------------------------------------ sorted sets
+    def _zset(self, name):
+        item = self._live(name)
+        return {} if item is None else item[0]
+
+    def zadd(self, name, mapping):
+        item = self._live(name)
+        members = dict(self._zset(name))
+        added = sum(m not in members for m in mapping)
+        members.update({m: float(s) for m, s in mapping.items()})
+        self.data[name] = (members, None if item is None else item[1])
+        return added
+
+    def zrem(self, name, *members):
+        item = self._live(name)
+        zset = dict(self._zset(name))
+        n = sum(zset.pop(m, None) is not None for m in members)
+        if item is not None:
+            self.data[name] = (zset, item[1])
+        return n
+
+    def zremrangebyscore(self, name, low, high):
+        item = self._live(name)
+        zset = self._zset(name)
+        keep = {m: s for m, s in zset.items() if not float(low) <= s <= float(high)}
+        if item is not None:
+            self.data[name] = (keep, item[1])
+        return len(zset) - len(keep)
+
+    def zcard(self, name):
+        return len(self._zset(name))
+
     def ping(self):
         return True
 
@@ -148,3 +180,15 @@ class AsyncFakeRedis:
 
     async def set(self, name, value, ex=None):
         return self.sync.set(name, value, ex=ex)
+
+    async def zadd(self, name, mapping):
+        return self.sync.zadd(name, mapping)
+
+    async def zrem(self, name, *members):
+        return self.sync.zrem(name, *members)
+
+    async def zremrangebyscore(self, name, low, high):
+        return self.sync.zremrangebyscore(name, low, high)
+
+    async def zcard(self, name):
+        return self.sync.zcard(name)

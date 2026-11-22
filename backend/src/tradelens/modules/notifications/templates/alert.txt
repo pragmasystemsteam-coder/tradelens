@@ -1,0 +1,9 @@
+Subject: TradeLens alert: $summary
+
+$summary
+
+Open it in TradeLens:
+$link
+
+Scores rank setups by fixed rules. They are not a probability of profit.
+TradeLens - analytics only. TradeLens does not place trades or give investment advice.

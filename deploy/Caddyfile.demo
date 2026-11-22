@@ -1,0 +1,48 @@
+# Client demo server (deploy/docker-compose.demo.yml): one HTTPS address for the whole app.
+# Caddy gets a free Let's Encrypt certificate for DEMO_HOST automatically (ports 80 and 443
+# must be open). DEMO_HOST can be a real domain, or <ip-with-dashes>.sslip.io for an IP only.
+{
+	admin off
+	email {$ACME_EMAIL}
+}
+
+# Container health check only (not published).
+:8080 {
+	respond /healthz "ok" 200
+}
+
+{$DEMO_HOST} {
+	request_body {
+		max_size 2MB
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+	@compressible not path /api/v1/stream*
+	encode @compressible zstd gzip
+	handle /api/admin/* {
+		respond 404
+	}
+	handle /api/v1/stream* {
+		reverse_proxy api:8000 {
+			flush_interval -1
+			header_up X-Forwarded-For {client_ip}
+		}
+	}
+	handle /api/* {
+		reverse_proxy api:8000 {
+			header_up X-Forwarded-For {client_ip}
+		}
+	}
+	handle /healthz* {
+		reverse_proxy api:8000
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+}

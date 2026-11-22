@@ -93,6 +93,16 @@ def test_filter_pattern_any(pro, data):
     assert got == [data["eur"], data["gbp"]]
 
 
+def test_filter_pattern_all_needs_every_pattern(pro, data):
+    """CR-006: ``match=all`` keeps setups that have every chosen pattern; ``any`` is default."""
+    c, _ = pro
+    params = [("pattern", "displacement"), ("pattern", "sweep")]
+    assert ids_of(c.get("/api/v1/setups", params=[*params, ("match", "all")])) == [data["eur"]]
+    anyof = ids_of(c.get("/api/v1/setups", params=[*params, ("match", "any")]))
+    assert {data["eur"], data["gbp"]} <= set(anyof) and len(anyof) > 1
+    assert c.get("/api/v1/setups", params=[("match", "most")]).status_code == 400
+
+
 def test_filter_session_any(pro, data):
     c, _ = pro
     got = ids_of(c.get("/api/v1/setups", params=[("session", "new_york")]))

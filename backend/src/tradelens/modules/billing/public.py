@@ -8,11 +8,15 @@ from tradelens.modules.billing.service import (
     build_plan_rows,
     cached_entitlements,
     create_manual_subscription,
+    email_hash,
+    end_subscriptions,
     entitlements,
     invalidate_entitlements,
+    paid_subscription_live,
     plan_is_default,
     resolve_limits,
     save_plan_rows,
+    start_trial,
 )
 
 __all__ = [
@@ -23,9 +27,13 @@ __all__ = [
     "build_plan_rows",
     "cached_entitlements",
     "create_manual_subscription",
+    "email_hash",
+    "end_subscriptions",
     "entitlements",
     "invalidate_entitlements",
+    "paid_subscription_live",
     "plan_is_default",
     "resolve_limits",
     "save_plan_rows",
+    "start_trial",
 ]

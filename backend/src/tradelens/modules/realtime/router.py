@@ -44,7 +44,7 @@ async def stream(
     ``data`` and ``user`` are always on. A refused topic answers before any stream opens.
     """
     channels = parse_topics(topics, instruments, viewer.limits, user_id=viewer.user_id)
-    await acquire_stream(aredis, viewer.user_id, cfg.sse_max_streams)
+    slot = await acquire_stream(aredis, viewer.user_id, cfg.sse_max_streams)
     try:
         allowed = frozenset(c for c, a in instruments.items() if viewer.limits.allows_asset(a))
         spec = StreamSpec(viewer.user_id, viewer.session_id, channels, allowed,
@@ -52,7 +52,7 @@ async def stream(
                           ping_s=float(cfg.sse_ping_seconds))  # fmt: skip
         pubsub = aredis.pubsub()
     except Exception:
-        await release_stream(aredis, viewer.user_id)
+        await release_stream(aredis, viewer.user_id, slot)
         raise
 
     released = False
@@ -61,13 +61,13 @@ async def stream(
         nonlocal released
         if not released:
             released = True
-            await release_stream(aredis, viewer.user_id)
+            await release_stream(aredis, viewer.user_id, slot)
 
     async def body() -> AsyncIterator[str]:
         try:
             async for chunk in event_stream(
                 pubsub, spec, disconnected=request.is_disconnected,
-                on_ping=lambda: keep_stream(aredis, viewer.user_id),
+                on_ping=lambda: keep_stream(aredis, viewer.user_id, slot),
             ):  # fmt: skip
                 yield chunk
         finally:

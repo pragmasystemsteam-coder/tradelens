@@ -1,0 +1,8 @@
+Subject: Your TradeLens $plan plan has ended
+
+Your $plan plan has ended and your account is now on Free. Your watchlists and alerts are kept.
+
+You can upgrade again at any time:
+$link
+
+TradeLens

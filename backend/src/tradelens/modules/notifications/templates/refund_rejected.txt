@@ -1,0 +1,9 @@
+Subject: About your refund request
+
+We could not approve your refund of $amount (reference $reference).
+
+Reason: $reason
+
+Reply to this email if you have questions.
+
+TradeLens

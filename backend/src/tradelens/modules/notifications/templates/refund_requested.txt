@@ -1,0 +1,7 @@
+Subject: We received your refund request
+
+We received your request to refund $amount (reference $reference).
+
+Our team reviews it and emails you the decision.
+
+TradeLens

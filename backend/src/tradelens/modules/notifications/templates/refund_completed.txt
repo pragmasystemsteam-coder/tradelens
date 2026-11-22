@@ -1,0 +1,5 @@
+Subject: Your refund was sent
+
+Your refund of $amount (reference $reference) was sent to your original payment method.
+
+TradeLens

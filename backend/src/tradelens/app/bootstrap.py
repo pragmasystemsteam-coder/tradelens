@@ -24,7 +24,14 @@ from tradelens.core.config import AppConfig
 from tradelens.core.errors import not_authenticated
 from tradelens.modules.analysis.public import SqlChartSource
 from tradelens.modules.analysis.router import ChartSource, get_chart_source
-from tradelens.modules.billing.public import account_summary, entitlements
+from tradelens.modules.billing.public import (
+    account_summary,
+    end_subscriptions,
+    entitlements,
+    invalidate_entitlements,
+    paid_subscription_live,
+    start_trial,
+)
 from tradelens.modules.market_data.public import instrument_rows
 from tradelens.modules.monitoring.router import get_checks, get_full_checks
 from tradelens.modules.monitoring.service import (
@@ -58,6 +65,14 @@ async def db_slot() -> AsyncIterator[None]:
         sem = _db_slots[loop] = asyncio.Semaphore(API_THREADS)
     async with sem:
         yield
+
+
+ACCOUNT_BILLING = deps.AccountBilling(
+    start_trial=start_trial,
+    paid_subscription_live=paid_subscription_live,
+    end_subscriptions=end_subscriptions,
+    forget_entitlements=invalidate_entitlements,
+)
 
 
 def utc_now() -> datetime:
@@ -157,6 +172,7 @@ def wire(app: FastAPI, config: AppConfig, infra: Infra) -> None:
         deps.get_conn: provide_conn,
         deps.get_viewer: viewer,
         deps.get_account_summary: provide_summary,
+        deps.get_account_billing: lambda: ACCOUNT_BILLING,
         deps.get_stream_viewer: provide_stream_viewer,
         deps.get_instrument_classes: provide_instrument_classes,
     }
